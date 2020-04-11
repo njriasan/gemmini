@@ -12,7 +12,10 @@ import freechips.rocketchip.rocket.constants.MemoryOpConstants
 
 import Util._
 
+// Change DMA to sign extend when smaller bitwidths of data are used
+// This expands as you go into the scratchpad (only if we want to do this)
 
+// This is each request to the DMA engine
 class StreamReadRequest(val spad_rows: Int, val acc_rows: Int)(implicit p: Parameters) extends CoreBundle {
   val vaddr = UInt(coreMaxAddrBits.W)
   val spaddr = UInt(log2Up(spad_rows max acc_rows).W)
@@ -33,6 +36,10 @@ class StreamReadResponse(val spadWidth: Int, val accWidth: Int, val spad_rows: I
   val cmd_id = UInt(8.W) // TODO magic number
 }
 
+
+// This is where DMA requests get fed into
+// Complex because it has to deal with stuff being read in out of order
+// We should focus on requests for tiling
 class StreamReader[T <: Data](config: GemminiArrayConfig[T], nXacts: Int, beatBits: Int, maxBytes: Int, spadWidth: Int, accWidth: Int, aligned_to: Int,
                    spad_rows: Int, acc_rows: Int, meshRows: Int)
                   (implicit p: Parameters) extends LazyModule {
@@ -177,6 +184,8 @@ class StreamReaderCore[T <: Data](config: GemminiArrayConfig[T], nXacts: Int, be
 
       packet
     }
+    // THIS IS WHAT WE WANT TO PAY ATTENTION TO
+    // This is a packet of what we want to read
     val read_packet = read_packets.reduce { (acc, p) =>
       Mux(p.bytes_read > acc.bytes_read, p, acc)
     }
