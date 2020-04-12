@@ -17,6 +17,7 @@ class ScratchpadMemReadRequest(local_addr_t: LocalAddr)
   val laddr = local_addr_t.cloneType
 
   val len = UInt(8.W) // TODO don't use a magic number for the width here
+  val precision_bits = UInt(3.W)
 
   val cmd_id = UInt(8.W) // TODO don't use a magic number here
 
@@ -88,6 +89,7 @@ class ScratchpadWriteIO(val n: Int, val w: Int, val mask_len: Int) extends Bundl
   val addr = Output(UInt(log2Ceil(n).W))
   val mask = Output(Vec(mask_len, Bool()))
   val data = Output(UInt(w.W))
+  val precision_bits = UInt(3.W) // Project. Magic Number. In theory this should be able to support up to 256 bits
 }
 
 class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int) extends Module {
@@ -105,18 +107,22 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int) extends
 
   // val mem = SyncReadMem(n, UInt(w.W))
   val mem = SyncReadMem(n, Vec(mask_len, mask_elem))
+  val precisions = SyncReadMem(n, 3.W)
 
   when (io.write.en) {
     if (aligned_to >= w)
       mem.write(io.write.addr, io.write.data.asTypeOf(Vec(mask_len, mask_elem)))
     else
       mem.write(io.write.addr, io.write.data.asTypeOf(Vec(mask_len, mask_elem)), io.write.mask)
+    // TODO should this be inside the if?
+    precisions.write(io.write.addr, io.write.precision_bits)
   }
 
   val raddr = io.read.req.bits.addr
   val ren = io.read.req.fire()
   // Project start
-  val precision = 1.U(8.W) << io.read.req.precision_bits
+  //val precision = 1.U(8.W) << mem.precision(row_addr)  io.read.req.precision_bits
+  val precision = 1.U(8.W) << precisions.read(raddr, ren)
   val rdata = mem.read(raddr, ren).asUInt()
   val rvec = VecInit(Seq.fill(w / config.inputType.getWidth.W)(0.S(config.inputType.getWidth.W)))
   for (i <- 0 until w / config.inputType.getWidth) {
@@ -314,16 +320,19 @@ class Scratchpad[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
           bio.write.addr := io.srams.write(i).addr
           bio.write.data := io.srams.write(i).data
           bio.write.mask := io.srams.write(i).mask
+          bio.write.precision_bits := log2Ceil(config.inputType.getWidth.U)
         }.elsewhen (dmaread) {
           bio.write.addr := reader.module.io.resp.bits.addr
           bio.write.data := reader.module.io.resp.bits.data
           bio.write.mask := reader.module.io.resp.bits.mask take ((spad_w / (aligned_to * 8)) max 1)
+          bio.write.precision_bits := reader.module.io.resp.bits.precision_bits
 
           reader.module.io.resp.ready := true.B // TODO we combinationally couple valid and ready signals
         }.otherwise {
           bio.write.addr := DontCare
           bio.write.data := DontCare
           bio.write.mask := DontCare
+          bio.write.precision_bits := DontCare
         }
       }
     }

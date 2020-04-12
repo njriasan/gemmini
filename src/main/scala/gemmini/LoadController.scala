@@ -75,6 +75,7 @@ class LoadController[T <: Data](config: GemminiArrayConfig[T], coreMaxAddrBits: 
   // Want this to reduce length to correspond to new bitwidth
   // Will just store a smaller length in the scratchpad
   io.dma.req.bits.len := cols / (config.inputType.getWidth.U / precision_bits)  // PROJECT
+  io.dma.req.bits.precision_bits := precision_bits
   io.dma.req.bits.status := mstatus
 
   // Command tracker IO
