@@ -34,6 +34,7 @@ class StreamReadResponse(val spadWidth: Int, val accWidth: Int, val spad_rows: I
   val last = Bool()
   val bytes_read = UInt(8.W) // TODO magic number
   val cmd_id = UInt(8.W) // TODO magic number
+  val precision_bits = UInt(3.W)
 }
 
 

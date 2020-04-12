@@ -662,6 +662,7 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
     io.srams.write(i).en := start_array_outputting && w_bank === i.U && !write_to_acc && !is_garbage_addr && write_this_row
     io.srams.write(i).addr := current_w_bank_address
     io.srams.write(i).data := activated_wdata.asUInt()
+    io.srams.write(i).precision_bits := log2Ceil(inputType.getWidth).U
     // io.srams.write(i).mask := VecInit(Seq.fill(io.srams.write(0).mask.length)(true.B))
     io.srams.write(i).mask := w_mask.flatMap(b => Seq.fill(inputType.getWidth / (aligned_to * 8))(b))
   }
