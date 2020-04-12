@@ -124,6 +124,17 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
   val rdata = mem.read(raddr, ren).asUInt()
   val rvec = VecInit(Seq.fill(w / max_precision)(0.S(max_precision.W)))
   var j = max_precision
+  /*
+   * val precision = 1.U(8.W) << precisions.read(raddr, ren)
+   * val rdata = mem.read(raddr, ren).asUInt()
+   * val rvec = VecInit((0 to block_cols).map { i =>
+   *
+   *   val unextended = (rdata >> (i.U * precision)) & (precision - 1.U)
+   *   val sign = unextended >> (precision - 1.U)
+   *
+   * }).asTypeOf(Vec(block_cols, UInt(8.W)))
+   */
+
   while (j >= 4) { // Replace this magic number. It doesn't make sense to have < 4 bits.
                    // Probably also want to address this in the instruction
     when(j.U === precision) {
@@ -248,6 +259,8 @@ class Scratchpad[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
     reader.module.io.req.bits.is_acc := read_issue_q.io.deq.bits.laddr.is_acc_addr
     reader.module.io.req.bits.status := read_issue_q.io.deq.bits.status
     reader.module.io.req.bits.cmd_id := read_issue_q.io.deq.bits.cmd_id
+    // PROJECT TODO wire up precision here
+    reader.module.io.req.bits.precision_bits := read_issue_q.io.deq.bits.precision_bits
 
     reader.module.io.resp.ready := false.B
     io.dma.read.resp.valid := reader.module.io.resp.fire() && reader.module.io.resp.bits.last

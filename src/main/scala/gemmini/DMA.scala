@@ -23,6 +23,7 @@ class StreamReadRequest(val spad_rows: Int, val acc_rows: Int)(implicit p: Param
   val status = new MStatus
   val len = UInt(16.W) // TODO magic number
   val cmd_id = UInt(8.W) // TODO magic number
+  val precision_bits = UInt(3.W)
 }
 
 class StreamReadResponse(val spadWidth: Int, val accWidth: Int, val spad_rows: Int, val acc_rows: Int,
@@ -82,6 +83,8 @@ class StreamReader[T <: Data](config: GemminiArrayConfig[T], nXacts: Int, beatBi
     io.resp.bits.addr := beatPacker.io.out.bits.addr
     io.resp.bits.mask := beatPacker.io.out.bits.mask
     io.resp.bits.is_acc := beatPacker.io.out.bits.is_acc
+    // PROJECT TODO  copy paste below for precision
+    io.resp.bits.precision_bits := RegEnable(xactTracker.io.peek.entry.precision_bits, beatPacker.io.req.fire())
     io.resp.bits.cmd_id := RegEnable(xactTracker.io.peek.entry.cmd_id, beatPacker.io.req.fire())
     io.resp.bits.bytes_read := RegEnable(xactTracker.io.peek.entry.bytes_to_read, beatPacker.io.req.fire())
     io.resp.bits.last := beatPacker.io.out.bits.last
@@ -208,6 +211,8 @@ class StreamReaderCore[T <: Data](config: GemminiArrayConfig[T], nXacts: Int, be
     io.reserve.valid := state === s_req_new_block && tl.a.ready // TODO decouple "reserve.valid" from "tl.a.ready"
     io.reserve.entry.shift := read_shift
     io.reserve.entry.is_acc := req.is_acc
+    // PROJECT TODO do this for precision
+    io.reserve.entry.precision_bits := req.precision_bits
     // io.reserve.entry.lg_len_req := read_lg_size
     io.reserve.entry.lg_len_req := DontCare // TODO just remove this from the IO completely
     io.reserve.entry.bytes_to_read := read_bytes_read
