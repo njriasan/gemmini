@@ -197,6 +197,7 @@ class Scratchpad[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
     write_dispatch_q.ready := false.B
 
     val write_issue_q = Module(new Queue(new ScratchpadMemWriteRequest(local_addr_t), mem_pipeline+1, pipe=true))
+    // this is just the queue of DMA requests
     val read_issue_q = Module(new Queue(new ScratchpadMemReadRequest(local_addr_t), mem_pipeline+1, pipe=true)) // TODO can't this just be a normal queue?
 
     write_issue_q.io.enq.valid := false.B

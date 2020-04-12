@@ -13,14 +13,16 @@ class LoadController[T <: Data](config: GemminiArrayConfig[T], coreMaxAddrBits: 
   import config._
 
   val io = IO(new Bundle {
-    val cmd = Flipped(Decoupled(new GemminiCmd(rob_entries)))
+    val cmd = Flipped(Decoupled(new GemminiCmd(rob_entries))) // Gets commands from CPU
 
-    val dma = new ScratchpadReadMemIO(local_addr_t)
+    val dma = new ScratchpadReadMemIO(local_addr_t) // Make DMA requests based on those commands
 
     val completed = Decoupled(UInt(log2Up(rob_entries).W))
 
     val busy = Output(Bool())
   })
+
+  // Multiple states. First is just waiting. Second is to move in rows
 
   val waiting_for_command :: waiting_for_dma_req_ready :: sending_rows :: Nil = Enum(3)
   val control_state = RegInit(waiting_for_command)
@@ -33,6 +35,8 @@ class LoadController[T <: Data](config: GemminiArrayConfig[T], coreMaxAddrBits: 
   val cmd = Queue(io.cmd, ld_queue_length)
   val vaddr = cmd.bits.cmd.rs1
   val localaddr = cmd.bits.cmd.rs2.asTypeOf(local_addr_t)
+  // RS2 is how many bits in rows and columns
+  // Pulls out the actual register
   val cols = cmd.bits.cmd.rs2(32 + mvin_len_bits - 1, 32) // TODO magic numbers
   val rows = cmd.bits.cmd.rs2(48 + mvin_rows_bits, 48) // TODO magic numbers
   val config_stride = cmd.bits.cmd.rs2
@@ -67,6 +71,9 @@ class LoadController[T <: Data](config: GemminiArrayConfig[T], coreMaxAddrBits: 
     (control_state === sending_rows && row_counter =/= 0.U)
   io.dma.req.bits.vaddr := vaddr + row_counter * stride
   io.dma.req.bits.laddr := localaddr_plus_row_counter
+  // Gives the number of elements we want to read from one row
+  // Want this to reduce length to correspond to new bitwidth
+  // Will just store a smaller length in the scratchpad
   io.dma.req.bits.len := cols / (config.inputType.getWidth.U / precision_bits)  // PROJECT
   io.dma.req.bits.status := mstatus
 
@@ -88,6 +95,8 @@ class LoadController[T <: Data](config: GemminiArrayConfig[T], coreMaxAddrBits: 
 
   // Row counter
   when (io.dma.req.fire()) {
+    // Loop through all of our rows 1 by 1
+    // Put 16 rows in 16 adjacent addresses in the scratchpad
     row_counter := wrappingAdd(row_counter, 1.U, rows)
   }
 
@@ -100,8 +109,9 @@ class LoadController[T <: Data](config: GemminiArrayConfig[T], coreMaxAddrBits: 
           stride := config_stride
           cmd.ready := true.B
         }
-
+        // Do Load is a move in command
         .elsewhen(DoLoad && cmd_tracker.io.alloc.fire()) {
+          // This actually changes our state
           control_state := Mux(io.dma.req.fire(), sending_rows, waiting_for_dma_req_ready)
         }
       }

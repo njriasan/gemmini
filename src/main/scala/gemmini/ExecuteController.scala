@@ -6,6 +6,8 @@ import GemminiISA._
 import Util._
 import freechips.rocketchip.config.Parameters
 
+// This is where the mat-muls happen
+
 // TODO handle reads from the same bank
 // TODO don't flush all 4 time steps when shorter flushes will work
 // TODO do we still need to flush when the dataflow is weight stationary? Won't the result just keep travelling through on its own?
@@ -587,6 +589,9 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
   val dataB_unpadded = MuxCase(readData(cntl.b_bank), Seq(cntl.accumulate_zeros -> 0.U, cntl.b_read_from_acc -> accReadData(cntl.b_bank_acc)))
   val dataD_unpadded = MuxCase(readData(cntl.d_bank), Seq(cntl.preload_zeros -> 0.U, cntl.d_read_from_acc -> accReadData(cntl.d_bank_acc)))
 
+  // This is where the data comes back form the scratchpad
+  // This is what will get fed into the mesh to compute C = A * B + D
+  // Do the sign extending here
   val dataA = VecInit(dataA_unpadded.asTypeOf(Vec(block_size, inputType)).zipWithIndex.map { case (d, i) => Mux(i.U < cntl.a_unpadded_cols, d, inputType.zero)})
   val dataB = VecInit(dataB_unpadded.asTypeOf(Vec(block_size, inputType)).zipWithIndex.map { case (d, i) => Mux(i.U < cntl.b_unpadded_cols, d, inputType.zero)})
   val dataD = VecInit(dataD_unpadded.asTypeOf(Vec(block_size, inputType)).zipWithIndex.map { case (d, i) => Mux(i.U < cntl.d_unpadded_cols, d, inputType.zero)})
@@ -617,6 +622,10 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
     mesh.io.a.bits := Mux(cntl.dataflow === Dataflow.OS.id.U, 0.U, dataA.asUInt).asTypeOf(Vec(meshRows, Vec(tileRows, inputType)))
     mesh.io.tag_in.bits.addr.make_this_garbage()
   }
+
+
+  // This is all about SRAM and accumulator rights
+  // Here is where you would do the opposite of sign extension
 
   // Scratchpad writes
   val w_address = mesh.io.tag_out.addr
