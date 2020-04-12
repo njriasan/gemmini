@@ -89,7 +89,7 @@ class ScratchpadWriteIO(val n: Int, val w: Int, val mask_len: Int) extends Bundl
   val addr = Output(UInt(log2Ceil(n).W))
   val mask = Output(Vec(mask_len, Bool()))
   val data = Output(UInt(w.W))
-  val precision_bits = UInt(3.W) // Project. Magic Number. In theory this should be able to support up to 256 bits
+  val precision_bits = Output(UInt(3.W)) // Project. Magic Number. In theory this should be able to support up to 256 bits
 }
 
 class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_precision: Int) extends Module {
@@ -124,10 +124,11 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
   val rdata = mem.read(raddr, ren).asUInt()
   val rvec = VecInit(Seq.fill(w / max_precision)(0.S(max_precision.W)))
   var j = max_precision
-  while (j > 0) {
+  while (j >= 4) { // Replace this magic number. It doesn't make sense to have < 4 bits.
+                   // Probably also want to address this in the instruction
     when(j.U === precision) {
       for (i <- 0 until w / max_precision) {
-        rvec(i) := rdata((i + 1) * j, i * j).asSInt()
+        rvec(i) := rdata(((i + 1) * j) - 1, i * j).asSInt()
       }
     }
     j = j / 2
@@ -329,7 +330,7 @@ class Scratchpad[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
           bio.write.addr := reader.module.io.resp.bits.addr
           bio.write.data := reader.module.io.resp.bits.data
           bio.write.mask := reader.module.io.resp.bits.mask take ((spad_w / (aligned_to * 8)) max 1)
-          bio.write.precision_bits := reader.module.io.resp.bits.precision_bits
+          bio.write.precision_bits := reader.module.io.resp.bits.precision_bits // ISSUE HERE. NEED TO FIX
 
           reader.module.io.resp.ready := true.B // TODO we combinationally couple valid and ready signals
         }.otherwise {
