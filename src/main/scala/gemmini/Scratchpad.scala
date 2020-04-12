@@ -114,6 +114,7 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int) extends
   val raddr = io.read.req.bits.addr
   val ren = io.read.req.fire()
   val rdata = mem.read(raddr, ren).asUInt()
+  val padded = sign_extend_each_elem(mask(rdata, first_half), precision)
   val fromDMA = io.read.req.bits.fromDMA
 
   // Make a queue which buffers the result of an SRAM read if it can't immediately be consumed
