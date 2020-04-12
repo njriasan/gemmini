@@ -331,6 +331,7 @@ class Scratchpad[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
           bio.write.data := reader.module.io.resp.bits.data
           bio.write.mask := reader.module.io.resp.bits.mask take ((spad_w / (aligned_to * 8)) max 1)
           bio.write.precision_bits := reader.module.io.resp.bits.precision_bits // ISSUE HERE. NEED TO FIX
+          //bio.write.precision_bits := io.dma.read.req.bits.precision_bits // ISSUE HERE. NEED TO FIX
 
           reader.module.io.resp.ready := true.B // TODO we combinationally couple valid and ready signals
         }.otherwise {
