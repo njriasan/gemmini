@@ -75,11 +75,12 @@ class LoadController[T <: Data](config: GemminiArrayConfig[T], coreMaxAddrBits: 
   // Gives the number of elements we want to read from one row
   // Want this to reduce length to correspond to new bitwidth
   // Will just store a smaller length in the scratchpad
-  val precision = 1.U(8.W) << precision_bits
-  io.dma.req.bits.len := cols / (config.inputType.getWidth.U / precision)  // PROJECT
+
+  io.dma.req.bits.len := cols >> (log2Ceil(config.inputType.getWidth).U - precision_bits) // PROJECT
   io.dma.req.bits.precision_bits := precision_bits
   io.dma.req.bits.status := mstatus
 
+  val precision = 1.U(8.W) << precision_bits
   // Command tracker IO
   cmd_tracker.io.alloc.valid := control_state === waiting_for_command && cmd.valid && DoLoad
   cmd_tracker.io.alloc.bits.bytes_to_read :=
