@@ -17,9 +17,10 @@ class ScratchpadMemReadRequest(local_addr_t: LocalAddr)
   val laddr = local_addr_t.cloneType
 
   val len = UInt(8.W) // TODO don't use a magic number for the width here
-  val precision_bits = UInt(3.W)
 
   val cmd_id = UInt(8.W) // TODO don't use a magic number here
+
+  val precision_bits = UInt(3.W)
 
   val status = new MStatus
 
@@ -71,7 +72,6 @@ class ScratchpadWriteMemIO(local_addr_t: LocalAddr)
 class ScratchpadReadReq(val n: Int) extends Bundle {
   val addr = UInt(log2Ceil(n).W)
   val fromDMA = Bool()
-  val precision_bits = UInt(3.W) // Project. Magic Number. In theory this should be able to support up to 256 bits
 }
 
 class ScratchpadReadResp(val w: Int) extends Bundle {
