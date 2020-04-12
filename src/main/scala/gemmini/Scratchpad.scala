@@ -70,6 +70,7 @@ class ScratchpadWriteMemIO(local_addr_t: LocalAddr)
 class ScratchpadReadReq(val n: Int) extends Bundle {
   val addr = UInt(log2Ceil(n).W)
   val fromDMA = Bool()
+  val precision_bits = UInt(3.W) // Project. Magic Number. In theory this should be able to support up to 256 bits
 }
 
 class ScratchpadReadResp(val w: Int) extends Bundle {
@@ -91,6 +92,7 @@ class ScratchpadWriteIO(val n: Int, val w: Int, val mask_len: Int) extends Bundl
 
 class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int) extends Module {
   // This is essentially a pipelined SRAM with the ability to stall pipeline stages
+  import config._
 
   require(w % aligned_to == 0 || w < aligned_to)
   val mask_len = (w / (aligned_to * 8)) max 1 // How many mask bits are there?
@@ -113,14 +115,21 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int) extends
 
   val raddr = io.read.req.bits.addr
   val ren = io.read.req.fire()
+  // Project start
+  val precision = 1.U(8.W) << io.read.req.precision_bits
   val rdata = mem.read(raddr, ren).asUInt()
-  val padded = sign_extend_each_elem(mask(rdata, first_half), precision)
+  val rvec = VecInit(Seq.fill(w / config.inputType.getWidth.W)(0.S(config.inputType.getWidth.W)))
+  for (i <- 0 until w / config.inputType.getWidth) {
+    rvec(i) := rdata((i + 1) * precision, i * precision).asSInt(config.inputType.getWidth.W)
+  }
+  // Project end
+
   val fromDMA = io.read.req.bits.fromDMA
 
   // Make a queue which buffers the result of an SRAM read if it can't immediately be consumed
   val q = Module(new Queue(new ScratchpadReadResp(w), 1, true, true))
   q.io.enq.valid := RegNext(ren)
-  q.io.enq.bits.data := rdata
+  q.io.enq.bits.data := rvec.asUInt() // Project
   q.io.enq.bits.fromDMA := RegNext(fromDMA)
 
   val q_will_be_empty = (q.io.count +& q.io.enq.fire()) - q.io.deq.fire() === 0.U
