@@ -49,6 +49,7 @@ class ScratchpadMemWriteResponse extends Bundle {
 class ScratchpadMemReadResponse extends Bundle {
   val bytesRead = UInt(16.W) // TODO magic number here
   val cmd_id = UInt(8.W) // TODO don't use a magic number here
+  // Seems like we might need to add precision_bits here for the stores
 }
 
 // class ScratchpadReadMemIO(val nBanks: Int, val nRows: Int, val acc_rows: Int)
@@ -284,6 +285,7 @@ class Scratchpad[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
 
       when (!write_issue_q.io.deq.bits.laddr.is_acc_addr) {
         writeData.valid := bank_issued_io.read.resp.valid && bank_issued_io.read.resp.bits.fromDMA
+        // Here is where the actually data from the bank is read to give to the requester 
         writeData.bits := bank_issued_io.read.resp.bits.data
       }
 
@@ -306,6 +308,9 @@ class Scratchpad[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
         }.elsewhen (dmawrite) {
           bio.read.req.bits.addr := write_dispatch_q.bits.laddr.sp_row()
           bio.read.req.bits.fromDMA := true.B
+          // Here is where the we know we have a DMAWrite aka a store
+          // This is probably where we need to recompute the precision similar to 
+          // the ScratchBank version
 
           when (bio.read.req.fire()) {
             write_dispatch_q.ready := true.B

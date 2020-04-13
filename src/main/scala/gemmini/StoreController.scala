@@ -27,6 +27,8 @@ class StoreController[T <: Data : Arithmetic](config: GemminiArrayConfig[T], cor
   val control_state = RegInit(waiting_for_command)
 
   val stride = RegInit((sp_width / 8).U(coreMaxAddrBits.W))
+  // Add a precision which is parallel to the load version
+  val precision_bits = RegInit((log2Ceil(config.inputType.getWidth)).U(3.W))
   val block_rows = meshRows * tileRows
   val row_counter = RegInit(0.U(log2Ceil(block_rows).W))
 
@@ -36,6 +38,7 @@ class StoreController[T <: Data : Arithmetic](config: GemminiArrayConfig[T], cor
   val cols = cmd.bits.cmd.rs2(32 + mvout_len_bits - 1, 32) // TODO magic numbers
   val rows = cmd.bits.cmd.rs2(48 + mvout_rows_bits - 1, 48) // TODO magic numbers
   val config_stride = cmd.bits.cmd.rs2
+  val config_precision_bits = cmd.bits.cmd.rs1(4, 2)
   val mstatus = cmd.bits.cmd.status
 
   val localaddr_plus_row_counter = localaddr + row_counter
@@ -48,9 +51,9 @@ class StoreController[T <: Data : Arithmetic](config: GemminiArrayConfig[T], cor
   // Command tracker instantiation
   val nCmds = 2 // TODO make this a config parameter
 
-  val deps_t = new Bundle {
-    val rob_id = UInt(log2Up(rob_entries).W)
-  }
+  val deps_t = new Bundle 
+  val rob_id = UInt(log2Up(rob_entries).W)
+  
 
   val cmd_tracker = Module(new DMAReadCommandTracker(nCmds, block_rows, deps_t))
 
@@ -60,15 +63,21 @@ class StoreController[T <: Data : Arithmetic](config: GemminiArrayConfig[T], cor
     (control_state === sending_rows && row_counter =/= 0.U)
   io.dma.req.bits.vaddr := vaddr + row_counter * stride
   io.dma.req.bits.laddr := localaddr_plus_row_counter
+  // Likely want to change the len the same way the Load changed
+  // io.dma.req.bits.len := cols >> (log2Ceil(config.inputType.getWidth).U - precision_bits) // PROJECT
+  // Here is likely where we want to indicate the precision as well
+  // io.dma.req.bits.precision_bits := precision_bits
   io.dma.req.bits.len := cols
   io.dma.req.bits.status := mstatus
 
   // Command tracker IO
   cmd_tracker.io.alloc.valid := control_state === waiting_for_command && cmd.valid && DoStore
+  // Nick - Possible change to the number of bytes_to_read?
   cmd_tracker.io.alloc.bits.bytes_to_read := rows
   cmd_tracker.io.alloc.bits.tag.rob_id := cmd.bits.rob_id
   cmd_tracker.io.request_returned.valid := io.dma.resp.fire() // TODO use a bundle connect
   cmd_tracker.io.request_returned.bits.cmd_id := io.dma.resp.bits.cmd_id // TODO use a bundle connect
+  // Nick - why is the bytes_read always 1. Is it always returning a full row????
   cmd_tracker.io.request_returned.bits.bytes_read := 1.U
   cmd_tracker.io.cmd_completed.ready := io.completed.ready
 
@@ -91,6 +100,7 @@ class StoreController[T <: Data : Arithmetic](config: GemminiArrayConfig[T], cor
       when (cmd.valid) {
         when(DoConfig) {
           stride := config_stride
+          precision_bits := config_precision_bits
           cmd.ready := true.B
         }
 
