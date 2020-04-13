@@ -136,8 +136,7 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
    * }).asTypeOf(Vec(block_cols, UInt(8.W)))
    */
 
-  while (j >= 4) { // Replace this magic number. It doesn't make sense to have < 4 bits.
-                   // Probably also want to address this in the instruction
+  while (j > 0) { // Replace this magic number.
     when(j.U === precision) {
       for (i <- 0 until w / max_precision) {
         rvec(i) := rdata(((i + 1) * j) - 1, i * j).asSInt()
@@ -283,9 +282,39 @@ class Scratchpad[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
       // Getting the output of the bank that's about to be issued to the writer
       val bank_issued_io = bank_ios(write_issue_q.io.deq.bits.laddr.sp_bank())
 
+      // Can we move dmawrite above this when? It doesn't seem to depend on the foreach variables
+      /*
+        val dmawrite = write_dispatch_q.valid && write_issue_q.io.enq.ready &&
+          !write_dispatch_q.bits.laddr.is_acc_addr && write_dispatch_q.bits.laddr.sp_bank() === i.U
+       */
       when (!write_issue_q.io.deq.bits.laddr.is_acc_addr) {
         writeData.valid := bank_issued_io.read.resp.valid && bank_issued_io.read.resp.bits.fromDMA
         // Here is where the actually data from the bank is read to give to the requester 
+        // This seems like a possible implementation
+        /*
+           when(dmawrite) {
+
+             val precision = 1.U(8.W) << precision_bits
+             val data_bits_vec = Seq.fill(spad_w)(1.W)
+             var j = inputType.getWidth
+             while (j > 0) { // Replace this magic number.
+                when(j.U === precision) {
+                  for (i <- 0 until spad_w / inputType.getWidth) {
+                    for (k <- 0 until j) {
+                      data_bits_vec(j * i + k) = bank_issued_io.read.resp.bits.data(i * inputType.getWidth + k)
+                    }
+                  }
+                  for (i <- j * inputType.getWidth until spad_w) {
+                    data_bits_vec(i) = 0.U
+                  }
+                }
+                j = j / 2
+             }
+             writeDate.bits := data_bits_vec.asUInt()
+           }.otherwise {
+             writeData.bits := bank_issued_io.read.resp.bits.data
+           }
+         */
         writeData.bits := bank_issued_io.read.resp.bits.data
       }
 
@@ -308,9 +337,6 @@ class Scratchpad[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
         }.elsewhen (dmawrite) {
           bio.read.req.bits.addr := write_dispatch_q.bits.laddr.sp_row()
           bio.read.req.bits.fromDMA := true.B
-          // Here is where the we know we have a DMAWrite aka a store
-          // This is probably where we need to recompute the precision similar to 
-          // the ScratchBank version
 
           when (bio.read.req.fire()) {
             write_dispatch_q.ready := true.B

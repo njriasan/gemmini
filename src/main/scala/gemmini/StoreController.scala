@@ -51,9 +51,9 @@ class StoreController[T <: Data : Arithmetic](config: GemminiArrayConfig[T], cor
   // Command tracker instantiation
   val nCmds = 2 // TODO make this a config parameter
 
-  val deps_t = new Bundle 
-  val rob_id = UInt(log2Up(rob_entries).W)
-  
+  val deps_t = new Bundle {
+    val rob_id = UInt(log2Up(rob_entries).W)
+  }
 
   val cmd_tracker = Module(new DMAReadCommandTracker(nCmds, block_rows, deps_t))
 
