@@ -122,7 +122,6 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
   // Project start
   val precision = 1.U(8.W) << precisions.read(raddr, ren)
   val rdata = mem.read(raddr, ren).asUInt()
-  printf(p"rdata[$raddr] = $rdata")
   val rvec = VecInit(Seq.fill(w / max_precision)(0.S(max_precision.W)))
   var j = max_precision
   /*
@@ -145,7 +144,6 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
     }
     j = j / 2
   }
-  printf(p"rvec[$raddr] = ${rvec.asUInt()}")
   // Project end
 
   val fromDMA = io.read.req.bits.fromDMA
