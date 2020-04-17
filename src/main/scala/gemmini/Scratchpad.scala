@@ -39,6 +39,9 @@ class ScratchpadMemWriteRequest(local_addr_t: LocalAddr)
 
   val status = new MStatus
 
+  // val precision_bits = UInt(3.W) FIXME
+
+
   override def cloneType: this.type = new ScratchpadMemWriteRequest(local_addr_t).asInstanceOf[this.type]
 }
 
@@ -120,6 +123,8 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
 
   val raddr = io.read.req.bits.addr
   val ren = io.read.req.fire()
+
+  val fromDMA = io.read.req.bits.fromDMA
   // Project start
   val precision = 1.U(8.W) << precisions.read(raddr, ren)
   val rdata = mem.read(raddr, ren).asUInt()
@@ -136,23 +141,27 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
    * }).asTypeOf(Vec(block_cols, UInt(8.W)))
    */
 
-  while (j > 0) { // Replace this magic number.
-    when(j.U === precision) {
-      for (i <- 0 until w / max_precision) {
-        rvec(i) := rdata(((i + 1) * j) - 1, i * j).asSInt()
-      }
-    }
-    j = j / 2
-  }
-  // Project end
-
-  val fromDMA = io.read.req.bits.fromDMA
-
   // Make a queue which buffers the result of an SRAM read if it can't immediately be consumed
   val q = Module(new Queue(new ScratchpadReadResp(w), 1, true, true))
   q.io.enq.valid := RegNext(ren)
-  q.io.enq.bits.data := rvec.asUInt() // Project
   q.io.enq.bits.fromDMA := RegNext(fromDMA)
+
+  when (fromDMA) {
+    q.io.enq.bits.data := rdata
+
+  }.otherwise{
+
+    while (j > 0) { // Replace this magic number.
+      when(j.U === precision) {
+        for (i <- 0 until w / max_precision) {
+          rvec(i) := rdata(((i + 1) * j) - 1, i * j).asSInt()
+        }
+      }
+      j = j / 2
+    }
+    q.io.enq.bits.data := rvec.asUInt() // Project
+  }
+  // Project end
 
   val q_will_be_empty = (q.io.count +& q.io.enq.fire()) - q.io.deq.fire() === 0.U
   io.read.req.ready := q_will_be_empty

@@ -1,5 +1,4 @@
-package gemmini
-
+package gemmini 
 import chisel3._
 import chisel3.util._
 import GemminiISA._
@@ -665,24 +664,26 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
     io.srams.write(i).addr := current_w_bank_address
     // Compress the data here
     val activated_int = activated_wdata.asUInt()
-    val compressed_data = VecInit(Seq.fill(config.inputType.getWidth() * w_matrix_cols)(0.U(1.W)))
-    var j = 1 << config.inputType.getWidth()
+    val compressed_data = VecInit(Seq.fill(config.inputType.getWidth * block_size)(0.U(1.W)))
+    var j = config.inputType.getWidth
     val precision = 1.U << precision_bits
     while (j > 0) {
       when(j.U === precision) {
-        for (i <- 0 until w_matrix_cols) {
-          val element = (activated_int((i + 1) * config.inputType.getWidth() - 1, i * config.inputType.getWidth())).asSInt()
-          val max_val = (1.U << (j - 1).U) - 1.U
+        for (i <- 0 until block_size) {
+          val element = (activated_int((i + 1) * config.inputType.getWidth - 1, i * config.inputType.getWidth)).asSInt()
+          val max_val = ((1.U << (j - 1).U) - 1.U).asSInt()
           val min_val = ~max_val
-          val compressed = 
-            when (element > max_val) {
-              max_val
-            }.elsewhen (element < min_val) {
-              min_val
-            }.otherwise{
-              element
-            }
-          compressed_data((i + 1) * j - 1, i * j) := compressed.asSInt(j.W)
+          val compressed = Wire(SInt(j.W)) 
+          when (element > max_val) {
+            compressed := max_val
+          }.elsewhen (element < min_val) {
+            compressed := min_val
+          }.otherwise{
+            compressed := element
+          }
+          for (k <- 0 until j) {
+            compressed_data((i * j) + k) := compressed(k)
+          }
         }
       }
       j = j / 2

@@ -98,7 +98,6 @@ class StoreController[T <: Data : Arithmetic](config: GemminiArrayConfig[T], cor
       when (cmd.valid) {
         when(DoConfig) {
           stride := config_stride
-          precision_bits := config_precision_bits
           cmd.ready := true.B
         }
 
