@@ -27,8 +27,7 @@ class StoreController[T <: Data : Arithmetic](config: GemminiArrayConfig[T], cor
   val control_state = RegInit(waiting_for_command)
 
   val stride = RegInit((sp_width / 8).U(coreMaxAddrBits.W))
-  // Add a precision which is parallel to the load version
-  val precision_bits = RegInit((log2Ceil(config.inputType.getWidth)).U(3.W))
+
   val block_rows = meshRows * tileRows
   val row_counter = RegInit(0.U(log2Ceil(block_rows).W))
 
@@ -38,7 +37,6 @@ class StoreController[T <: Data : Arithmetic](config: GemminiArrayConfig[T], cor
   val cols = cmd.bits.cmd.rs2(32 + mvout_len_bits - 1, 32) // TODO magic numbers
   val rows = cmd.bits.cmd.rs2(48 + mvout_rows_bits - 1, 48) // TODO magic numbers
   val config_stride = cmd.bits.cmd.rs2
-  val config_precision_bits = cmd.bits.cmd.rs1(4, 2)
   val mstatus = cmd.bits.cmd.status
 
   val localaddr_plus_row_counter = localaddr + row_counter

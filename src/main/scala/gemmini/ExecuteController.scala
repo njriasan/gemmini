@@ -84,6 +84,7 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
   val acc_shift = Reg(UInt(log2Up(accType.getWidth).W))
   val relu6_shift = Reg(UInt(log2Up(accType.getWidth).W))
   val activation = Reg(UInt(2.W))
+  val precision_bits = Reg(UInt(3.W)) // TODO Replace the magic number here
 
   // SRAM addresses of matmul operands
   val a_address_rs1 = rs1s(a_address_place).asTypeOf(local_addr_t)
@@ -353,6 +354,7 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
           in_shift := rs2s(0)(31, 0) // TODO magic number
           acc_shift := cmd.bits(0).cmd.rs1(xLen-1, 32) // TODO magic number
           relu6_shift := cmd.bits(0).cmd.rs2(xLen-1, 32) // TODO magic number
+          precision_bits := rs1s(0)(31, 29) // TODO magic number
 
           if (dataflow == Dataflow.BOTH)
             current_dataflow := rs1s(0)(2)
@@ -661,8 +663,35 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
 
     io.srams.write(i).en := start_array_outputting && w_bank === i.U && !write_to_acc && !is_garbage_addr && write_this_row
     io.srams.write(i).addr := current_w_bank_address
-    io.srams.write(i).data := activated_wdata.asUInt()
-    io.srams.write(i).precision_bits := log2Ceil(inputType.getWidth).U
+    // Compress the data here
+    val activated_int = activated_wdata.asUInt()
+    val compressed_data = VecInit(Seq.fill(config.inputType.getWidth() * w_matrix_cols)(0.U(1.W)))
+    var j = 1 << config.inputType.getWidth()
+    val precision = 1.U << precision_bits
+    while (j > 0) {
+      when(j.U === precision) {
+        for (i <- 0 until w_matrix_cols) {
+          val element = (activated_int((i + 1) * config.inputType.getWidth() - 1, i * config.inputType.getWidth())).asSInt()
+          val max_val = (1.U << (j - 1).U) - 1.U
+          val min_val = ~max_val
+          val compressed = 
+            when (element > max_val) {
+              max_val
+            }.elsewhen (element < min_val) {
+              min_val
+            }.otherwise{
+              element
+            }
+          compressed_data((i + 1) * j - 1, i * j) := compressed.asSInt(j.W)
+        }
+      }
+      j = j / 2
+    }
+
+
+    io.srams.write(i).data := compressed_data.asUInt()
+    // Change with the precision
+    io.srams.write(i).precision_bits := precision_bits
     // io.srams.write(i).mask := VecInit(Seq.fill(io.srams.write(0).mask.length)(true.B))
     io.srams.write(i).mask := w_mask.flatMap(b => Seq.fill(inputType.getWidth / (aligned_to * 8))(b))
   }

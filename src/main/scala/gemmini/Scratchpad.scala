@@ -282,11 +282,6 @@ class Scratchpad[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
       // Getting the output of the bank that's about to be issued to the writer
       val bank_issued_io = bank_ios(write_issue_q.io.deq.bits.laddr.sp_bank())
 
-      // Can we move dmawrite above this when? It doesn't seem to depend on the foreach variables
-      /*
-        val dmawrite = write_dispatch_q.valid && write_issue_q.io.enq.ready &&
-          !write_dispatch_q.bits.laddr.is_acc_addr && write_dispatch_q.bits.laddr.sp_bank() === i.U
-       */
       when (!write_issue_q.io.deq.bits.laddr.is_acc_addr) {
         writeData.valid := bank_issued_io.read.resp.valid && bank_issued_io.read.resp.bits.fromDMA
         // Here is where the actually data from the bank is read to give to the requester 
@@ -369,13 +364,12 @@ class Scratchpad[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
           bio.write.addr := io.srams.write(i).addr
           bio.write.data := io.srams.write(i).data
           bio.write.mask := io.srams.write(i).mask
-          bio.write.precision_bits := log2Ceil(config.inputType.getWidth).U
+          bio.write.precision_bits := io.srams.write(i).precision_bits
         }.elsewhen (dmaread) {
           bio.write.addr := reader.module.io.resp.bits.addr
           bio.write.data := reader.module.io.resp.bits.data
           bio.write.mask := reader.module.io.resp.bits.mask take ((spad_w / (aligned_to * 8)) max 1)
           bio.write.precision_bits := reader.module.io.resp.bits.precision_bits // ISSUE HERE. NEED TO FIX
-          //bio.write.precision_bits := io.dma.read.req.bits.precision_bits // ISSUE HERE. NEED TO FIX
 
           reader.module.io.resp.ready := true.B // TODO we combinationally couple valid and ready signals
         }.otherwise {
