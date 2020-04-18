@@ -130,16 +130,6 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
   val rdata = mem.read(raddr, ren).asUInt()
   val rvec = VecInit(Seq.fill(w / max_precision)(0.S(max_precision.W)))
   var j = max_precision
-  /*
-   * val precision = 1.U(8.W) << precisions.read(raddr, ren)
-   * val rdata = mem.read(raddr, ren).asUInt()
-   * val rvec = VecInit((0 to block_cols).map { i =>
-   *
-   *   val unextended = (rdata >> (i.U * precision)) & (precision - 1.U)
-   *   val sign = unextended >> (precision - 1.U)
-   *
-   * }).asTypeOf(Vec(block_cols, UInt(8.W)))
-   */
 
   // Make a queue which buffers the result of an SRAM read if it can't immediately be consumed
   val q = Module(new Queue(new ScratchpadReadResp(w), 1, true, true))
@@ -293,32 +283,7 @@ class Scratchpad[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
 
       when (!write_issue_q.io.deq.bits.laddr.is_acc_addr) {
         writeData.valid := bank_issued_io.read.resp.valid && bank_issued_io.read.resp.bits.fromDMA
-        // Here is where the actually data from the bank is read to give to the requester 
-        // This seems like a possible implementation
-        /*
-           when(dmawrite) {
-
-             val precision = 1.U(8.W) << precision_bits
-             val data_bits_vec = Seq.fill(spad_w)(1.W)
-             var j = inputType.getWidth
-             while (j > 0) { // Replace this magic number.
-                when(j.U === precision) {
-                  for (i <- 0 until spad_w / inputType.getWidth) {
-                    for (k <- 0 until j) {
-                      data_bits_vec(j * i + k) = bank_issued_io.read.resp.bits.data(i * inputType.getWidth + k)
-                    }
-                  }
-                  for (i <- j * inputType.getWidth until spad_w) {
-                    data_bits_vec(i) = 0.U
-                  }
-                }
-                j = j / 2
-             }
-             writeDate.bits := data_bits_vec.asUInt()
-           }.otherwise {
-             writeData.bits := bank_issued_io.read.resp.bits.data
-           }
-         */
+        // Here is where data is transferred
         writeData.bits := bank_issued_io.read.resp.bits.data
       }
 
