@@ -136,10 +136,10 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
   q.io.enq.valid := RegNext(ren)
   q.io.enq.bits.fromDMA := RegNext(fromDMA)
 
-  when (fromDMA) {
-    q.io.enq.bits.data := rdata
+ // Issues arise when we use fromDMA. Timing concern????
+ // when (fromDMA) {
 
-  }.otherwise{
+ // }.otherwise{
 
     while (j > 0) { // Replace this magic number.
       when(j.U === precision) {
@@ -150,7 +150,7 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
       j = j / 2
     }
     q.io.enq.bits.data := rvec.asUInt() // Project
-  }
+//  }
   // Project end
 
   val q_will_be_empty = (q.io.count +& q.io.enq.fire()) - q.io.deq.fire() === 0.U
@@ -343,7 +343,7 @@ class Scratchpad[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
           bio.write.addr := reader.module.io.resp.bits.addr
           bio.write.data := reader.module.io.resp.bits.data
           bio.write.mask := reader.module.io.resp.bits.mask take ((spad_w / (aligned_to * 8)) max 1)
-          bio.write.precision_bits := reader.module.io.resp.bits.precision_bits // ISSUE HERE. NEED TO FIX
+          bio.write.precision_bits := reader.module.io.resp.bits.precision_bits
 
           reader.module.io.resp.ready := true.B // TODO we combinationally couple valid and ready signals
         }.otherwise {

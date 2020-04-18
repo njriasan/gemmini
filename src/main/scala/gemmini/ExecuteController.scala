@@ -669,10 +669,13 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
     val precision = 1.U << precision_bits
     while (j > 0) {
       when(j.U === precision) {
+        val max_val = Wire(SInt(j.W))
+        max_val := ((1.U << (j - 1).U) - 1.U).asSInt()
+        val min_val = ~max_val
+        printf("max_val = %d\n", max_val)
+        printf("min_val = %d\n", min_val)
         for (i <- 0 until block_size) {
-          val element = (activated_int((i + 1) * config.inputType.getWidth - 1, i * config.inputType.getWidth)).asSInt()
-          val max_val = ((1.U << (j - 1).U) - 1.U).asSInt()
-          val min_val = ~max_val
+          val element = (activated_int(((i + 1) * config.inputType.getWidth) - 1, i * config.inputType.getWidth)).asSInt()
           val compressed = Wire(SInt(j.W)) 
           when (element > max_val) {
             compressed := max_val
@@ -681,6 +684,7 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
           }.otherwise{
             compressed := element
           }
+          printf("compressed element = %d\n", compressed)
           for (k <- 0 until j) {
             compressed_data((i * j) + k) := compressed(k)
           }
