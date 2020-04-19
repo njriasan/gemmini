@@ -136,11 +136,9 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
   q.io.enq.valid := RegNext(ren)
   q.io.enq.bits.fromDMA := RegNext(fromDMA)
 
- // Issues arise when we use fromDMA. Timing concern????
- // when (fromDMA) {
-
- // }.otherwise{
-
+  when (q.io.enq.bits.fromDMA) {
+    q.io.enq.bits.data := rdata
+  }.otherwise{
     while (j > 0) { // Replace this magic number.
       when(j.U === precision) {
         for (i <- 0 until w / max_precision) {
@@ -150,7 +148,7 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
       j = j / 2
     }
     q.io.enq.bits.data := rvec.asUInt() // Project
-//  }
+  }
   // Project end
 
   val q_will_be_empty = (q.io.count +& q.io.enq.fire()) - q.io.deq.fire() === 0.U
@@ -158,6 +156,7 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
 
   // Build the rest of the resp pipeline
   val rdata_p = Pipeline(q.io.deq, mem_pipeline)
+  // TODO do expansion on rdata_p instead
   io.read.resp <> rdata_p
 }
 
