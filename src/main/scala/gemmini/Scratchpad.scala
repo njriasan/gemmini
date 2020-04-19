@@ -110,7 +110,7 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
 
   // val mem = SyncReadMem(n, UInt(w.W))
   val mem = SyncReadMem(n, Vec(mask_len, mask_elem))
-  val precisions = SyncReadMem(n, UInt(3.W))
+  val precision_bits = SyncReadMem(n, UInt(3.W))
 
   when (io.write.en) {
     if (aligned_to >= w)
@@ -118,7 +118,7 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
     else
       mem.write(io.write.addr, io.write.data.asTypeOf(Vec(mask_len, mask_elem)), io.write.mask)
     // TODO should this be inside the if?
-    precisions.write(io.write.addr, io.write.precision_bits)
+    precision_bits.write(io.write.addr, io.write.precision_bits)
   }
 
   val raddr = io.read.req.bits.addr
@@ -126,7 +126,7 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
 
   val fromDMA = io.read.req.bits.fromDMA
   // Project start
-  val precision = 1.U(8.W) << precisions.read(raddr, ren)
+  val precision = 1.U(8.W) << precision_bits.read(raddr, ren)
   val rdata = mem.read(raddr, ren).asUInt()
   val rvec = VecInit(Seq.fill(w / max_precision)(0.S(max_precision.W)))
   var j = max_precision
