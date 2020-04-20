@@ -666,16 +666,16 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
     // Compress the data here
     val activated_int = activated_wdata.asUInt()
     val compressed_data = VecInit(Seq.fill(config.inputType.getWidth * block_size)(0.U(1.W)))
-    var j = config.inputType.getWidth
+    var precision_ctr = config.inputType.getWidth
     val precision = 1.U << precision_bits
-    while (j > 0) {
-      when(j.U === precision) {
-        val max_val = Wire(SInt(j.W))
-        max_val := ((1.U << (j - 1).U) - 1.U).asSInt()
+    while (precision_ctr > 0) {
+      when(precision_ctr.U === precision) {
+        val max_val = Wire(SInt(precision_ctr.W))
+        max_val := ((1.U << (precision_ctr - 1).U) - 1.U).asSInt()
         val min_val = ~max_val
-        for (l <- 0 until block_size) {
-          val element = (activated_int(((l + 1) * config.inputType.getWidth) - 1, l * config.inputType.getWidth)).asSInt()
-          val compressed = Wire(SInt(j.W)) 
+        for (col_elem_val <- 0 until block_size) {
+          val element = (activated_int(((col_elem_val + 1) * config.inputType.getWidth) - 1, col_elem_val * config.inputType.getWidth)).asSInt()
+          val compressed = Wire(SInt(precision_ctr.W)) 
           when (element > max_val) {
             compressed := max_val
           }.elsewhen (element < min_val) {
@@ -683,12 +683,12 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
           }.otherwise{
             compressed := element
           }
-          for (k <- 0 until j) {
-            compressed_data((l * j) + k) := compressed(k)
+          for (bit <- 0 until precision_ctr) {
+            compressed_data((col_elem_val * precision_ctr) + bit) := compressed(bit)
           }
         }
       }
-      j = j / 2
+      precision_ctr = precision_ctr / 2
     }
 
 

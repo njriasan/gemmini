@@ -78,6 +78,13 @@ class ScratchpadReadReq(val n: Int) extends Bundle {
   val precision_bits = UInt(3.W)
 }
 
+// New Class for pipelining memory to later edit
+class PipelinedScratchpadReadResp(val w: Int) extends Bundle {
+  val body = new ScratchpadReadResp(w)
+  val starting_precision_bits = UInt(3.W)
+  val ending_precision_bits = UInt(3.W)
+}
+
 class ScratchpadReadResp(val w: Int) extends Bundle {
   val data = UInt(w.W)
   val fromDMA = Bool()
@@ -129,17 +136,28 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
   val rdata = mem.read(raddr, ren).asUInt()
 
   // Make a queue which buffers the result of an SRAM read if it can't immediately be consumed
-  val q = Module(new Queue(new ScratchpadReadResp(w), 1, true, true))
+  val q = Module(new Queue(new PipelinedScratchpadReadResp(w), 1, true, true))
   q.io.enq.valid := RegNext(ren)
-  q.io.enq.bits.fromDMA := RegNext(fromDMA)
+  q.io.enq.bits.body.fromDMA := RegNext(fromDMA)
+  q.io.enq.bits.body.data := rdata
+  q.io.enq.bits.starting_precision_bits := precision_bits.read(raddr, ren)
+  q.io.enq.bits.ending_precision_bits := RegNext(io.read.req.bits.precision_bits)
 
-  val output_precision_bits = RegNext(io.read.req.bits.precision_bits)
+  val q_will_be_empty = (q.io.count +& q.io.enq.fire()) - q.io.deq.fire() === 0.U
+  io.read.req.ready := q_will_be_empty
+
+  // Build the rest of the resp pipeline
+  val rdata_p = Pipeline(q.io.deq, mem_pipeline)
+  // TODO do expansion on rdata_p instead
+  io.read.resp.valid := rdata_p.valid
+  io.read.resp.bits.fromDMA := rdata_p.bits.body.fromDMA
+  rdata_p.ready := io.read.resp.ready
 
   // TODO Move the compression/decompression after the pipeline stage
-  val stored_precision = 1.U(8.W) << precision_bits.read(raddr, ren)
-  val output_precision = 1.U(8.W) << output_precision_bits
+  val stored_precision = 1.U(8.W) << rdata_p.bits.starting_precision_bits
+  val output_precision = 1.U(8.W) << rdata_p.bits.ending_precision_bits
   when (stored_precision === output_precision) {
-    q.io.enq.bits.data := rdata.asUInt() 
+    io.read.resp.bits.data := rdata_p.bits.body.data
   }.otherwise{
     val output_data = VecInit(Seq.fill(w)(0.U(1.W)))
     var input_ctr = max_precision
@@ -154,7 +172,7 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
             max_val := ((1.U << (output_ctr - 1).U) - 1.U).asSInt()
             val min_val = ~max_val
             for (i <- 0 until w / max_precision) {
-              val element = (rdata(((i + 1) * input_ctr) - 1, i * input_ctr)).asSInt()
+              val element = (rdata_p.bits.body.data(((i + 1) * input_ctr) - 1, i * input_ctr)).asSInt()
               val compressed = Wire(SInt(max_bits.W)) 
               when (element > max_val) {
                 compressed := max_val
@@ -179,17 +197,10 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
       }
       input_ctr = input_ctr / 2
     }
-    q.io.enq.bits.data := output_data.asUInt() // Project
+    io.read.resp.bits.data := output_data.asUInt()
   }
   // Project end
 
-  val q_will_be_empty = (q.io.count +& q.io.enq.fire()) - q.io.deq.fire() === 0.U
-  io.read.req.ready := q_will_be_empty
-
-  // Build the rest of the resp pipeline
-  val rdata_p = Pipeline(q.io.deq, mem_pipeline)
-  // TODO do expansion on rdata_p instead
-  io.read.resp <> rdata_p
 }
 
 // TODO find a more elegant way to move data into accumulator
