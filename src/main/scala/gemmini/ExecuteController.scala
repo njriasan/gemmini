@@ -677,7 +677,7 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
           max_val := ((1.U << (input_width - 1).U) - 1.U).asSInt()
           val min_val = ~max_val
           for (col_mem_number <- 0 until block_size) {
-            val element = (activated_int(((col_mem_number * config.inputType.getWidth) + 1) - 1, col_mem_number * config.inputType.getWidth)).asSInt()
+            val element = (activated_int(((col_mem_number + 1) * config.inputType.getWidth) - 1, col_mem_number * config.inputType.getWidth)).asSInt()
             val compressed = Wire(SInt(input_width.W)) 
             when (element > max_val) {
               compressed := max_val
