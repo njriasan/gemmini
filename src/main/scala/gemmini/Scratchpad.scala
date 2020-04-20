@@ -133,10 +133,11 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
   q.io.enq.valid := RegNext(ren)
   q.io.enq.bits.fromDMA := RegNext(fromDMA)
 
+  val output_precision_bits = RegNext(io.read.req.bits.precision_bits)
 
   // TODO Move the compression/decompression after the pipeline stage
   val stored_precision = 1.U(8.W) << precision_bits.read(raddr, ren)
-  val output_precision = 1.U(8.W) << io.read.req.bits.precision_bits
+  val output_precision = 1.U(8.W) << output_precision_bits
   when (stored_precision === output_precision) {
     q.io.enq.bits.data := rdata.asUInt() 
   }.otherwise{

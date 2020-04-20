@@ -666,35 +666,33 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
     // Compress the data here
     val activated_int = activated_wdata.asUInt()
     val compressed_data = VecInit(Seq.fill(config.inputType.getWidth * block_size)(0.U(1.W)))
+    var j = config.inputType.getWidth
     val precision = 1.U << precision_bits
-    when (precision === config.inputType.getWidth.U) {
-      io.srams.write(i).data := activated_int.asUInt() 
-    }.otherwise {
-      var input_width = config.inputType.getWidth
-      while (input_width > 0) {
-        when(input_width.U === precision) {
-          val max_val = Wire(SInt(config.inputType.getWidth.W))
-          max_val := ((1.U << (input_width - 1).U) - 1.U).asSInt()
-          val min_val = ~max_val
-          for (col_mem_number <- 0 until block_size) {
-            val element = (activated_int(((col_mem_number + 1) * config.inputType.getWidth) - 1, col_mem_number * config.inputType.getWidth)).asSInt()
-            val compressed = Wire(SInt(input_width.W)) 
-            when (element > max_val) {
-              compressed := max_val
-            }.elsewhen (element < min_val) {
-              compressed := min_val
-            }.otherwise{
-              compressed := element
-            }
-            for (k <- 0 until input_width) {
-              compressed_data((col_mem_number * input_width) + k) := compressed(k)
-            }
+    while (j > 0) {
+      when(j.U === precision) {
+        val max_val = Wire(SInt(j.W))
+        max_val := ((1.U << (j - 1).U) - 1.U).asSInt()
+        val min_val = ~max_val
+        for (l <- 0 until block_size) {
+          val element = (activated_int(((l + 1) * config.inputType.getWidth) - 1, l * config.inputType.getWidth)).asSInt()
+          val compressed = Wire(SInt(j.W)) 
+          when (element > max_val) {
+            compressed := max_val
+          }.elsewhen (element < min_val) {
+            compressed := min_val
+          }.otherwise{
+            compressed := element
+          }
+          for (k <- 0 until j) {
+            compressed_data((l * j) + k) := compressed(k)
           }
         }
-        input_width = input_width / 2
       }
-      io.srams.write(i).data := compressed_data.asUInt()
+      j = j / 2
     }
+
+
+    io.srams.write(i).data := compressed_data.asUInt()
     // Change with the precision
     io.srams.write(i).precision_bits := precision_bits
     // io.srams.write(i).mask := VecInit(Seq.fill(io.srams.write(0).mask.length)(true.B))
