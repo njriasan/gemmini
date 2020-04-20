@@ -39,7 +39,7 @@ class ScratchpadMemWriteRequest(local_addr_t: LocalAddr)
 
   val status = new MStatus
 
-  // val precision_bits = UInt(3.W) FIXME
+  val precision_bits = UInt(3.W)
 
 
   override def cloneType: this.type = new ScratchpadMemWriteRequest(local_addr_t).asInstanceOf[this.type]
@@ -52,7 +52,6 @@ class ScratchpadMemWriteResponse extends Bundle {
 class ScratchpadMemReadResponse extends Bundle {
   val bytesRead = UInt(16.W) // TODO magic number here
   val cmd_id = UInt(8.W) // TODO don't use a magic number here
-  // Seems like we might need to add precision_bits here for the stores
 }
 
 // class ScratchpadReadMemIO(val nBanks: Int, val nRows: Int, val acc_rows: Int)
@@ -76,6 +75,7 @@ class ScratchpadWriteMemIO(local_addr_t: LocalAddr)
 class ScratchpadReadReq(val n: Int) extends Bundle {
   val addr = UInt(log2Ceil(n).W)
   val fromDMA = Bool()
+  val precision_bits = UInt(3.W)
 }
 
 class ScratchpadReadResp(val w: Int) extends Bundle {
@@ -126,28 +126,59 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
 
   val fromDMA = io.read.req.bits.fromDMA
   // Project start
-  val precision = 1.U(8.W) << precision_bits.read(raddr, ren)
   val rdata = mem.read(raddr, ren).asUInt()
-  val rvec = VecInit(Seq.fill(w / max_precision)(0.S(max_precision.W)))
-  var j = max_precision
 
   // Make a queue which buffers the result of an SRAM read if it can't immediately be consumed
   val q = Module(new Queue(new ScratchpadReadResp(w), 1, true, true))
   q.io.enq.valid := RegNext(ren)
   q.io.enq.bits.fromDMA := RegNext(fromDMA)
 
-  when (q.io.enq.bits.fromDMA) {
-    q.io.enq.bits.data := rdata
+
+  // TODO Move the compression/decompression after the pipeline stage
+  val stored_precision = 1.U(8.W) << precision_bits.read(raddr, ren)
+  val output_precision = 1.U(8.W) << io.read.req.bits.precision_bits
+  when (stored_precision === output_precision) {
+    q.io.enq.bits.data := rdata.asUInt() 
   }.otherwise{
-    while (j > 0) { // Replace this magic number.
-      when(j.U === precision) {
-        for (i <- 0 until w / max_precision) {
-          rvec(i) := rdata(((i + 1) * j) - 1, i * j).asSInt()
+    val output_data = VecInit(Seq.fill(w)(0.U(1.W)))
+    var input_ctr = max_precision
+    while (input_ctr > 0) { // Replace this magic number.
+      var output_ctr = max_precision
+      while (output_ctr > 0) { // Replace this magic number.
+        // Don't generate hardware to transfer the same # of bits
+        if (output_ctr != input_ctr) {
+          when(input_ctr.U === stored_precision && output_ctr.U === output_precision) {
+            val max_bits = if (input_ctr > output_ctr) input_ctr else output_ctr
+            val max_val = Wire(SInt(max_bits.W))
+            max_val := ((1.U << (output_ctr - 1).U) - 1.U).asSInt()
+            val min_val = ~max_val
+            for (i <- 0 until w / max_precision) {
+              val element = (rdata(((i + 1) * input_ctr) - 1, i * input_ctr)).asSInt()
+              val compressed = Wire(SInt(max_bits.W)) 
+              when (element > max_val) {
+                compressed := max_val
+              }.elsewhen (element < min_val) {
+                compressed := min_val
+              }.otherwise{
+                compressed := element
+              }
+              // Data bits will give us an expand if input_ctr < output_ctr otherwise a compress
+              val data_bits = if (input_ctr < output_ctr) input_ctr else output_ctr
+              for (l <- 0 until data_bits) {
+                output_data((i * output_ctr) + l) := compressed(l)
+              }
+              // Loop should only execute if we have an expand
+              for (l <- input_ctr until output_ctr) {
+                output_data((i * output_ctr) + l) := compressed(input_ctr - 1) 
+              }
+            }
+          }
         }
+        output_ctr = output_ctr / 2
       }
-      j = j / 2
+      input_ctr = input_ctr / 2
     }
-    q.io.enq.bits.data := rvec.asUInt() // Project
+    q.io.enq.bits.data := output_data.asUInt() // Project
   }
   // Project end
 
@@ -302,9 +333,11 @@ class Scratchpad[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
         when (exread) {
           bio.read.req.bits.addr := ex_read_req.bits.addr
           bio.read.req.bits.fromDMA := false.B
+          bio.read.req.bits.precision_bits := ex_read_req.bits.precision_bits
         }.elsewhen (dmawrite) {
           bio.read.req.bits.addr := write_dispatch_q.bits.laddr.sp_row()
           bio.read.req.bits.fromDMA := true.B
+          bio.read.req.bits.precision_bits := write_dispatch_q.bits.precision_bits
 
           when (bio.read.req.fire()) {
             write_dispatch_q.ready := true.B

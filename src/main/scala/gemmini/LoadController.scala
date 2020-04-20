@@ -29,6 +29,7 @@ class LoadController[T <: Data](config: GemminiArrayConfig[T], coreMaxAddrBits: 
 
   val stride = RegInit((sp_width / 8).U(coreMaxAddrBits.W))
   val precision_bits = RegInit((log2Ceil(config.inputType.getWidth)).U(3.W))
+
   val block_rows = meshRows * tileRows
   val block_cols = meshColumns * tileColumns
   val row_counter = RegInit(0.U(log2Ceil(block_rows).W))

@@ -27,6 +27,7 @@ class StoreController[T <: Data : Arithmetic](config: GemminiArrayConfig[T], cor
   val control_state = RegInit(waiting_for_command)
 
   val stride = RegInit((sp_width / 8).U(coreMaxAddrBits.W))
+  val precision_bits = RegInit((log2Ceil(config.inputType.getWidth)).U(3.W))
 
   val block_rows = meshRows * tileRows
   val row_counter = RegInit(0.U(log2Ceil(block_rows).W))
@@ -37,6 +38,7 @@ class StoreController[T <: Data : Arithmetic](config: GemminiArrayConfig[T], cor
   val cols = cmd.bits.cmd.rs2(32 + mvout_len_bits - 1, 32) // TODO magic numbers
   val rows = cmd.bits.cmd.rs2(48 + mvout_rows_bits - 1, 48) // TODO magic numbers
   val config_stride = cmd.bits.cmd.rs2
+  val config_precision_bits = cmd.bits.cmd.rs1(4, 2)
   val mstatus = cmd.bits.cmd.status
 
   val localaddr_plus_row_counter = localaddr + row_counter
@@ -61,11 +63,8 @@ class StoreController[T <: Data : Arithmetic](config: GemminiArrayConfig[T], cor
     (control_state === sending_rows && row_counter =/= 0.U)
   io.dma.req.bits.vaddr := vaddr + row_counter * stride
   io.dma.req.bits.laddr := localaddr_plus_row_counter
-  // Likely want to change the len the same way the Load changed
-  // io.dma.req.bits.len := cols >> (log2Ceil(config.inputType.getWidth).U - precision_bits) // PROJECT
-  // Here is likely where we want to indicate the precision as well
-  // io.dma.req.bits.precision_bits := precision_bits
-  io.dma.req.bits.len := cols
+  io.dma.req.bits.len := cols >> (log2Ceil(config.inputType.getWidth).U - precision_bits) // PROJECT
+  io.dma.req.bits.precision_bits := precision_bits
   io.dma.req.bits.status := mstatus
 
   // Command tracker IO
@@ -98,6 +97,7 @@ class StoreController[T <: Data : Arithmetic](config: GemminiArrayConfig[T], cor
       when (cmd.valid) {
         when(DoConfig) {
           stride := config_stride
+          precision_bits := config_precision_bits
           cmd.ready := true.B
         }
 
