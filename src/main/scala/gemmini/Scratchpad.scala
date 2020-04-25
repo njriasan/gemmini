@@ -160,42 +160,37 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
     io.read.resp.bits.data := rdata_p.bits.body.data
   }.otherwise{
     val output_data = VecInit(Seq.fill(w)(0.U(1.W)))
-    var input_ctr = max_precision
-    while (input_ctr > 0) { // Replace this magic number.
-      var output_ctr = max_precision
-      while (output_ctr > 0) { // Replace this magic number.
+    var output_ctr = max_precision
+    while (output_ctr > 0) { // Replace this magic number.
+      val max_val = Wire(SInt(output_ctr.W))
+      max_val := ((1.U << (output_ctr - 1).U) - 1.U).asSInt()
+      val min_val = ~max_val
+      var input_ctr = max_precision
+      while (input_ctr > 0) { // Replace this magic number.
         // Don't generate hardware to transfer the same # of bits
         if (output_ctr != input_ctr) {
           when(input_ctr.U === stored_precision && output_ctr.U === output_precision) {
             val max_bits = if (input_ctr > output_ctr) input_ctr else output_ctr
-            val max_val = Wire(SInt(max_bits.W))
-            max_val := ((1.U << (output_ctr - 1).U) - 1.U).asSInt()
-            val min_val = ~max_val
             for (i <- 0 until w / max_precision) {
               val element = (rdata_p.bits.body.data(((i + 1) * input_ctr) - 1, i * input_ctr)).asSInt()
-              val compressed = Wire(SInt(max_bits.W)) 
+              val threshold_output = Wire(SInt(max_bits.W)) 
               when (element > max_val) {
-                compressed := max_val
+                threshold_output := max_val
               }.elsewhen (element < min_val) {
-                compressed := min_val
+                threshold_output := min_val
               }.otherwise{
-                compressed := element
+                threshold_output := element
               }
               // Data bits will give us an expand if input_ctr < output_ctr otherwise a compress
-              val data_bits = if (input_ctr < output_ctr) input_ctr else output_ctr
-              for (l <- 0 until data_bits) {
-                output_data((i * output_ctr) + l) := compressed(l)
-              }
-              // Loop should only execute if we have an expand
-              for (l <- input_ctr until output_ctr) {
-                output_data((i * output_ctr) + l) := compressed(input_ctr - 1) 
+              for (l <- 0 until output_ctr) {
+                output_data((i * output_ctr) + l) := threshold_output(l)
               }
             }
           }
         }
-        output_ctr = output_ctr / 2
+        input_ctr = input_ctr / 2
       }
-      input_ctr = input_ctr / 2
+      output_ctr = output_ctr / 2
     }
     io.read.resp.bits.data := output_data.asUInt()
   }
