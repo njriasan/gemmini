@@ -139,9 +139,18 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
        * 4            2       0100     0000000011110000
        * 4            3       1000     0000000000001111
        */
+      // Nick's changes to split the code
+      // Calculate number of subrows but in terms of 2^n
+      val num_subrow_bits = log2Ceil(input_width).U - io.write.precision_bits
+      // Divide mask len by num subrows to get the len of each segment
+      val mask_segment_len = mask_len.U >> num_subrow_bits
+      // Calculate the smallest value that should be in the mask
+      val mask_bottom = subrow * mask_segment_len
+      // Calculate the smallest value that should not be included
+      val mask_top = (subrow + 1.U) * mask_segment_len
       val mask_seq = Seq.tabulate(mask_len)(i =>
-            io.write.mask(i) & (1.U << subrow)(i.U / (precision * (mask_len / input_width).U)).asBool()
-          )
+          io.write.mask(i) & ((i.U >= mask_bottom) && (i.U < mask_top)) 
+      )
       val mask = VecInit(mask_seq)
       /*
       val mask = for(i <- 0 until log2Ceil(config.inputType.getWidth)) {
