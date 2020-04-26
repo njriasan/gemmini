@@ -16,7 +16,7 @@ import Util._
 // This expands as you go into the scratchpad (only if we want to do this)
 
 // This is each request to the DMA engine
-class StreamReadRequest(val spad_rows: Int, val acc_rows: Int)(implicit p: Parameters) extends CoreBundle {
+class StreamReadRequest(val spad_rows: Int, val acc_rows: Int, val input_width: Int)(implicit p: Parameters) extends CoreBundle {
   val vaddr = UInt(coreMaxAddrBits.W)
   val spaddr = UInt(log2Up(spad_rows max acc_rows).W)
   val is_acc = Bool()
@@ -24,10 +24,11 @@ class StreamReadRequest(val spad_rows: Int, val acc_rows: Int)(implicit p: Param
   val len = UInt(16.W) // TODO magic number
   val cmd_id = UInt(8.W) // TODO magic number
   val precision_bits = UInt(3.W)
+  val subrow = UInt(input_width.W)
 }
 
 class StreamReadResponse(val spadWidth: Int, val accWidth: Int, val spad_rows: Int, val acc_rows: Int,
-                         val aligned_to: Int) (implicit p: Parameters) extends CoreBundle {
+                         val aligned_to: Int, val input_type: Int) (implicit p: Parameters) extends CoreBundle {
   val data = UInt((spadWidth max accWidth).W)
   val addr = UInt(log2Up(spad_rows max acc_rows).W)
   val mask = Vec((spadWidth max accWidth) / (aligned_to * 8) max 1, Bool())
@@ -36,6 +37,7 @@ class StreamReadResponse(val spadWidth: Int, val accWidth: Int, val spad_rows: I
   val bytes_read = UInt(8.W) // TODO magic number
   val cmd_id = UInt(8.W) // TODO magic number
   val precision_bits = UInt(3.W)
+  val subrow = UInt(input_type.W)
 }
 
 
@@ -50,14 +52,14 @@ class StreamReader[T <: Data](config: GemminiArrayConfig[T], nXacts: Int, beatBi
 
   lazy val module = new LazyModuleImp(this) {
     val io = IO(new Bundle {
-      val req = Flipped(Decoupled(new StreamReadRequest(spad_rows, acc_rows)))
-      val resp = Decoupled(new StreamReadResponse(spadWidth, accWidth, spad_rows, acc_rows, aligned_to))
+      val req = Flipped(Decoupled(new StreamReadRequest(spad_rows, acc_rows, config.inputType.getWidth)))
+      val resp = Decoupled(new StreamReadResponse(spadWidth, accWidth, spad_rows, acc_rows, aligned_to, config.inputType.getWidth))
       val tlb = new FrontendTLBIO
       val busy = Output(Bool())
       val flush = Input(Bool())
     })
 
-    val xactTracker = Module(new XactTracker(nXacts, maxBytes, spadWidth, accWidth, spad_rows, acc_rows, maxBytes))
+    val xactTracker = Module(new XactTracker(nXacts, maxBytes, spadWidth, accWidth, spad_rows, acc_rows, maxBytes, config.inputType.getWidth))
 
     val beatPacker = Module(new BeatMerger(beatBits, maxBytes, spadWidth, accWidth, spad_rows, acc_rows, maxBytes, aligned_to, meshRows))
 
@@ -84,6 +86,7 @@ class StreamReader[T <: Data](config: GemminiArrayConfig[T], nXacts: Int, beatBi
     io.resp.bits.mask := beatPacker.io.out.bits.mask
     io.resp.bits.is_acc := beatPacker.io.out.bits.is_acc
     // PROJECT TODO  copy paste below for precision
+    io.resp.bits.subrow := RegEnable(xactTracker.io.peek.entry.subrow, beatPacker.io.req.fire())
     io.resp.bits.precision_bits := RegEnable(xactTracker.io.peek.entry.precision_bits, beatPacker.io.req.fire())
     io.resp.bits.cmd_id := RegEnable(xactTracker.io.peek.entry.cmd_id, beatPacker.io.req.fire())
     io.resp.bits.bytes_read := RegEnable(xactTracker.io.peek.entry.bytes_to_read, beatPacker.io.req.fire())
@@ -118,8 +121,8 @@ class StreamReaderCore[T <: Data](config: GemminiArrayConfig[T], nXacts: Int, be
     val beatBytes = beatBits / 8
 
     val io = IO(new Bundle {
-      val req = Flipped(Decoupled(new StreamReadRequest(spad_rows, acc_rows)))
-      val reserve = new XactTrackerAllocIO(nXacts, maxBytes, spadWidth, accWidth, spad_rows, acc_rows, maxBytes)
+      val req = Flipped(Decoupled(new StreamReadRequest(spad_rows, acc_rows, config.inputType.getWidth)))
+      val reserve = new XactTrackerAllocIO(nXacts, maxBytes, spadWidth, accWidth, spad_rows, acc_rows, maxBytes, config.inputType.getWidth)
       val beatData = Decoupled(new StreamReadBeat(nXacts, beatBits, maxBytes))
       val tlb = new FrontendTLBIO
       val flush = Input(Bool())
@@ -128,7 +131,7 @@ class StreamReaderCore[T <: Data](config: GemminiArrayConfig[T], nXacts: Int, be
     val s_idle :: s_translate_req :: s_translate_resp :: s_req_new_block :: Nil = Enum(4)
     val state = RegInit(s_idle)
 
-    val req = Reg(new StreamReadRequest(spad_rows, acc_rows))
+    val req = Reg(new StreamReadRequest(spad_rows, acc_rows, config.inputType.getWidth))
 
     val vpn = req.vaddr(coreMaxAddrBits-1, pgIdxBits)
 
@@ -213,6 +216,7 @@ class StreamReaderCore[T <: Data](config: GemminiArrayConfig[T], nXacts: Int, be
     io.reserve.entry.is_acc := req.is_acc
     // PROJECT TODO do this for precision
     io.reserve.entry.precision_bits := req.precision_bits
+    io.reserve.entry.subrow := req.subrow
     // io.reserve.entry.lg_len_req := read_lg_size
     io.reserve.entry.lg_len_req := DontCare // TODO just remove this from the IO completely
     io.reserve.entry.bytes_to_read := read_bytes_read

@@ -36,7 +36,7 @@ class LoadController[T <: Data](config: GemminiArrayConfig[T], coreMaxAddrBits: 
 
   val cmd = Queue(io.cmd, ld_queue_length)
   val vaddr = cmd.bits.cmd.rs1
-  val localaddr = cmd.bits.cmd.rs2.asTypeOf(local_addr_t)
+  val localaddr = (cmd.bits.cmd.rs2 << log2Ceil(config.inputType.getWidth)).asTypeOf(local_addr_t)
   // RS2 is how many bits in rows and columns
   // Pulls out the actual register
   val cols = cmd.bits.cmd.rs2(32 + mvin_len_bits - 1, 32) // TODO magic numbers
@@ -45,7 +45,11 @@ class LoadController[T <: Data](config: GemminiArrayConfig[T], coreMaxAddrBits: 
   val config_precision_bits = cmd.bits.cmd.rs1(4, 2)
   val mstatus = cmd.bits.cmd.status
 
-  val localaddr_plus_row_counter = localaddr + row_counter
+  // val precision = 1 << config_precision_bits
+  // val subrows_per_row = config.inputType.getWidth / precision
+  // summing like this will step over subrows for the given precision,
+  // and then over rows
+  val localaddr_plus_row_counter = localaddr + (row_counter << config_precision_bits)
 
   io.busy := cmd.valid
 

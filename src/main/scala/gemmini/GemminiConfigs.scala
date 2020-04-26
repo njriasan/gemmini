@@ -42,7 +42,7 @@ case class GemminiArrayConfig[T <: Data : Arithmetic](
     case CapacityInMatrices(ms) => ms * meshRows * tileRows / acc_banks
   }
 
-  val local_addr_t = new LocalAddr(sp_banks, sp_bank_entries, acc_banks, acc_bank_entries)
+  val local_addr_t = new LocalAddr(sp_banks, sp_bank_entries, acc_banks, acc_bank_entries, inputType.getWidth)
 
   val max_in_flight_reqs = 16 // TODO calculate this somehow
 

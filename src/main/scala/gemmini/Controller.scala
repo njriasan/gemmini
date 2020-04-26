@@ -18,15 +18,18 @@ class GemminiCmd(rob_entries: Int)(implicit p: Parameters) extends Bundle {
   override def cloneType: this.type = (new GemminiCmd(rob_entries)).asInstanceOf[this.type]
 }
 
-class LocalAddr(sp_banks: Int, sp_bank_entries: Int, acc_banks: Int, acc_bank_entries: Int) extends Bundle {
+class LocalAddr(sp_banks: Int, sp_bank_entries: Int, acc_banks: Int, acc_bank_entries: Int, input_width: Int) extends Bundle {
   private val localAddrBits = 32 // TODO magic number
 
-  private val spAddrBits = log2Ceil(sp_banks * sp_bank_entries)
+  // config.inputType.getWidth is the max possible number of subrows
+  private val spAddrBits = log2Ceil(sp_banks * sp_bank_entries) + input_width
   private val accAddrBits = log2Ceil(acc_banks * acc_bank_entries)
   private val maxAddrBits = spAddrBits max accAddrBits
 
   private val spBankBits = log2Up(sp_banks)
   private val spBankRowBits = log2Up(sp_bank_entries)
+  // config.inputType.getWidth is the max possible number of subrows
+  private val spBankSubrowBits = log2Ceil(input_width)
 
   private val accBankBits = log2Up(acc_banks)
   private val accBankRowBits = log2Up(acc_bank_entries)
@@ -37,12 +40,14 @@ class LocalAddr(sp_banks: Int, sp_bank_entries: Int, acc_banks: Int, acc_bank_en
   val garbage_bit = if (localAddrBits - maxAddrBits >= 3) UInt(1.W) else UInt(0.W)
   val data = UInt(maxAddrBits.W)
 
-  def sp_bank(dummy: Int = 0) = if (spAddrBits == spBankRowBits) 0.U else data(spAddrBits - 1, spBankRowBits)
-  def sp_row(dummy: Int = 0) = data(spBankRowBits - 1, 0)
+  def sp_bank(dummy: Int = 0) = if (spAddrBits == spBankRowBits) 0.U else data(spAddrBits - 1, spBankRowBits + spBankSubrowBits)
+  def sp_row(dummy: Int = 0) = data(spBankRowBits + spBankSubrowBits - 1, spBankSubrowBits)
+  def sp_subrow(dummy: Int = 0) = data(spBankSubrowBits - 1, 0)
   def acc_bank(dummy: Int = 0) = if (accAddrBits == accBankRowBits) 0.U else data(accAddrBits - 1, accBankRowBits)
   def acc_row(dummy: Int = 0) = data(accBankRowBits - 1, 0)
 
   def full_sp_addr(dummy: Int = 0) = data(spAddrBits - 1, 0)
+  def sp_row_addr(dummy: Int = 0) = data(spAddrBits - 1, spBankSubrowBits)
   def full_acc_addr(dummy: Int = 0) = data(accAddrBits - 1, 0)
 
   def is_same_address(other: LocalAddr): Bool = is_acc_addr === other.is_acc_addr && data === other.data
@@ -74,7 +79,7 @@ class LocalAddr(sp_banks: Int, sp_bank_entries: Int, acc_banks: Int, acc_bank_en
     data := ~(0.U(maxAddrBits.W))
   }
 
-  override def cloneType: LocalAddr.this.type = new LocalAddr(sp_banks, sp_bank_entries, acc_banks, acc_bank_entries).asInstanceOf[this.type]
+  override def cloneType: LocalAddr.this.type = new LocalAddr(sp_banks, sp_bank_entries, acc_banks, acc_bank_entries, input_width).asInstanceOf[this.type]
 }
 
 class Gemmini[T <: Data : Arithmetic](opcodes: OpcodeSet, val config: GemminiArrayConfig[T])
