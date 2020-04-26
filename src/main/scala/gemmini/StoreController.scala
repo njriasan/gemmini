@@ -34,14 +34,15 @@ class StoreController[T <: Data : Arithmetic](config: GemminiArrayConfig[T], cor
 
   val cmd = Queue(io.cmd, st_queue_length)
   val vaddr = cmd.bits.cmd.rs1
-  val localaddr = cmd.bits.cmd.rs2.asTypeOf(local_addr_t)
+  val localaddr = (cmd.bits.cmd.rs2 << log2Ceil(config.inputType.getWidth)).asTypeOf(local_addr_t)
   val cols = cmd.bits.cmd.rs2(32 + mvout_len_bits - 1, 32) // TODO magic numbers
   val rows = cmd.bits.cmd.rs2(48 + mvout_rows_bits - 1, 48) // TODO magic numbers
   val config_stride = cmd.bits.cmd.rs2
   val config_precision_bits = cmd.bits.cmd.rs1(4, 2)
   val mstatus = cmd.bits.cmd.status
 
-  val localaddr_plus_row_counter = localaddr + row_counter
+  val localaddr_plus_row_counter = localaddr + (row_counter << precision_bits)
+
 
   val DoConfig = cmd.bits.cmd.inst.funct === CONFIG_CMD
   val DoStore = !DoConfig // TODO change this if more commands are added

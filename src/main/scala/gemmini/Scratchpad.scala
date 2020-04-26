@@ -175,6 +175,30 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
 
   val fromDMA = io.read.req.bits.fromDMA
   // Project start
+  //val elems_per_subrow = precision * (mask_len / input_width).U
+  val read_subrow = io.read.subrow
+  /*
+   * num_subrows  subrow  1 << sr  mask (for mask_len=16)
+   * 1            0       0001     1111111111111111
+   * 2            0       0001     1111111100000000
+   * 2            1       0010     0000000011111111
+   * 4            0       0001     1111000000000000
+   * 4            1       0010     0000111100000000
+   * 4            2       0100     0000000011110000
+   * 4            3       1000     0000000000001111
+   */
+  // Nick's changes to split the code
+  // Calculate number of subrows but in terms of 2^n
+  val num_subrow_bits = log2Ceil(input_width).U - io.write.precision_bits
+  // Divide mask len by num subrows to get the len of each segment
+  val mask_segment_len = mask_len.U >> num_subrow_bits
+  // Calculate the smallest value that should be in the mask
+  val mask_bottom = subrow * mask_segment_len
+  // Calculate the smallest value that should not be included
+  val mask_top = (subrow + 1.U) * mask_segment_len
+  val mask_seq = Seq.tabulate(mask_len)(i =>
+      io.write.mask(i) & ((i.U >= mask_bottom) && (i.U < mask_top)) 
+  )
   val rdata = mem.read(raddr, ren).asUInt()
 
   // Make a queue which buffers the result of an SRAM read if it can't immediately be consumed

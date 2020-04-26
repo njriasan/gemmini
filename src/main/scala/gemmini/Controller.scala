@@ -22,7 +22,7 @@ class LocalAddr(sp_banks: Int, sp_bank_entries: Int, acc_banks: Int, acc_bank_en
   private val localAddrBits = 32 // TODO magic number
 
   // config.inputType.getWidth is the max possible number of subrows
-  private val spAddrBits = log2Ceil(sp_banks * sp_bank_entries) + input_width
+  private val spAddrBits = log2Ceil(sp_banks * sp_bank_entries * input_width)
   private val accAddrBits = log2Ceil(acc_banks * acc_bank_entries)
   private val maxAddrBits = spAddrBits max accAddrBits
 

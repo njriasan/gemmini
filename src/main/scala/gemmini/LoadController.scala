@@ -49,7 +49,7 @@ class LoadController[T <: Data](config: GemminiArrayConfig[T], coreMaxAddrBits: 
   // val subrows_per_row = config.inputType.getWidth / precision
   // summing like this will step over subrows for the given precision,
   // and then over rows
-  val localaddr_plus_row_counter = localaddr + (row_counter << config_precision_bits)
+  val localaddr_plus_row_counter = localaddr + (row_counter << precision_bits)
 
   io.busy := cmd.valid
 
