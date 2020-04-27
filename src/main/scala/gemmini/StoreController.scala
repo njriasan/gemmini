@@ -41,14 +41,12 @@ class StoreController[T <: Data : Arithmetic](config: GemminiArrayConfig[T], cor
   val config_precision_bits = cmd.bits.cmd.rs1(4, 2)
   val mstatus = cmd.bits.cmd.status
 
-  val localaddr_plus_row_counter = localaddr + (row_counter << precision_bits)
-
-
   val DoConfig = cmd.bits.cmd.inst.funct === CONFIG_CMD
   val DoStore = !DoConfig // TODO change this if more commands are added
 
   cmd.ready := false.B
 
+  val localaddr_plus_row_counter = localaddr + (row_counter << precision_bits)
   // Command tracker instantiation
   val nCmds = 2 // TODO make this a config parameter
 

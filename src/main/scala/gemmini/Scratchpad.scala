@@ -80,6 +80,15 @@ class ScratchpadReadReq(val n: Int, val input_width: Int) extends Bundle {
   val subrow = UInt(input_width.W) // which subrow to write to
 }
 
+// New Class for pipelining precision bits
+class PipelinedPrecisionBits(val n: Int, val input_width: Int) extends Bundle {
+  val fromDMA = Bool()
+  val addr = UInt(log2Ceil(n).W)
+  val starting_precision_bits = UInt(3.W)
+  val ending_precision_bits = UInt(3.W)
+  val subrow = UInt(input_width.W) // which subrow to write to
+}
+
 // New Class for pipelining memory to later edit
 class PipelinedScratchpadReadResp(val w: Int, val input_width: Int) extends Bundle {
   val body = new ScratchpadReadResp(w)
@@ -151,28 +160,52 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
       val mask_bottom = subrow * mask_segment_len
       // Calculate the smallest value that should not be included
       val mask_top = (subrow + 1.U) * mask_segment_len
-      val mask_seq = Seq.tabulate(mask_len)(i =>
-          io.write.mask(i) & ((i.U >= mask_bottom) && (i.U < mask_top)) 
-      )
-      val mask = VecInit(mask_seq)
-      /*
-      val mask = for(i <- 0 until log2Ceil(config.inputType.getWidth)) {
-        // 1 << i is num_subrows for this iteration
-        for(j <- 0 until 1 << i) {
-          // j is subrow for this iteration
-          when(1 << i.U === num_subrows && j.U == subrow) {
-            Seq.fill(mask_len)(value).flatten
+      val mask = VecInit(Seq.fill(mask_len)(false.B))
+      var index = log2Ceil(input_width)
+      while (index >= 0) {
+        when (index.U === num_subrow_bits) {
+          val modulo = mask_len >> index 
+          for (i <- 0 until mask_len) {
+            mask(i) := io.write.mask(i % modulo) & ((i.U >= mask_bottom) && (i.U < mask_top)) 
           }
         }
+        index = index - 1
       }
-      */
-      //val mask = io.write.mask & mask.asUInt()
       mem.write(io.write.addr, io.write.data.asTypeOf(Vec(mask_len, mask_elem)), mask)
     }
     // TODO should this be inside the if?
     precision_bits.write(io.write.addr, io.write.precision_bits)
   }
-  
+  /*
+  // Make a queue for the precision bits access
+  val early_q = Module(new Queue(new PipelinedPrecisionBits(n, log2Ceil(max_precision)), 1, true, true))
+  early_q.io.enq.valid := RegNext(ren)
+  early_q.io.enq.bits.fromDMA := RegNext(fromDMA)
+  early_q.io.enq.bits.addr := RegNext(raddr)
+  early_q.io.enq.bits.starting_precision_bits := precision_bits.read(raddr, ren)
+  early_q.io.enq.bits.ending_precision_bits := RegNext(io.read.req.bits.precision_bits)
+  early_q.io.enq.bits.subrow := RegNext(io.read.req.bits.subrow)
+  val early_q_will_be_empty = (early_q.io.count +& early_q.io.enq.fire()) - early_q.io.deq.fire() === 0.U
+  io.read.req.ready := early_q_will_be_empty
+
+  // Build the rest of the resp pipeline
+  val precision_p = Pipeline(early_q.io.deq, mem_pipeline)
+
+  val rdata = mem.read(precision_p.bits.addr, precision_p.ready).asUInt()
+  // Make a queue which buffers the result of an SRAM read if it can't immediately be consumed
+  val q = Module(new Queue(new PipelinedScratchpadReadResp(w, log2Ceil(max_precision)), 1, true, true))
+  q.io.enq.valid := precision_p.valid
+  q.io.enq.bits.body.fromDMA := precision_p.bits.fromDMA
+  q.io.enq.bits.body.data := rdata
+  q.io.enq.bits.starting_precision_bits := precision_p.bits.starting_precision_bits
+
+  q.io.enq.bits.ending_precision_bits := precision_p.bits.ending_precision_bits
+  q.io.enq.bits.subrow := precision_p.bits.subrow
+
+  val q_will_be_empty = (q.io.count +& q.io.enq.fire()) - q.io.deq.fire() === 0.U
+  precision_p.ready := q_will_be_empty
+  */
+
   val fromDMA = io.read.req.bits.fromDMA
   val raddr = io.read.req.bits.addr
   val ren = io.read.req.fire()
@@ -217,7 +250,7 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
         val data_intermediate = WireDefault(0.U(w.W))
         for (i <- 0 until (1 << num_subrow_bits)) {
           when (i.U === subrow) {
-            data_intermediate := rdata_p.bits.body.data(((i + 1) * segment_len) - 1, i * segment_len)
+            data_intermediate := Cat(0.U(w), rdata_p.bits.body.data(((i + 1) * segment_len) - 1, i * segment_len))
           }
         } 
         val max_bits = if (input_ctr > output_ctr) input_ctr else output_ctr

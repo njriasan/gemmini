@@ -309,7 +309,7 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
     io.srams.read(i).req.valid := read_a || read_b || read_d
     io.srams.read(i).req.bits.fromDMA := false.B
     // Precision bits should make an impact here
-    io.srams.read(i).req.bits.addr := MuxCase(a_address_rs1.sprow() + a_fire_counter,
+    io.srams.read(i).req.bits.addr := MuxCase(a_address_rs1.sp_row() + a_fire_counter,
       Seq(read_b -> (b_address_rs2.sp_row() + b_fire_counter),
         read_d -> (d_address_rs1.sp_row() + block_size.U - 1.U - d_fire_counter))) // FIXME
 
