@@ -127,7 +127,7 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
   val mask_elem = UInt((w min (aligned_to * 8)).W) // What datatype does each mask bit correspond to?
 
   val io = IO(new Bundle {
-    val read = Flipped(new ScratchpadReadIO(n, w, log2Ceil(max_precision)))
+    val read = Flipped(new ScratchpadReadIO(n, w, input_width))
     val write = Flipped(new ScratchpadWriteIO(n, w, mask_len, input_width))
   })
 
