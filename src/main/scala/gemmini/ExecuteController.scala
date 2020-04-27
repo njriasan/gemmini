@@ -20,7 +20,7 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
     val cmd = Flipped(Decoupled(new GemminiCmd(rob_entries)))
 
     val srams = new Bundle {
-      val read = Vec(sp_banks, new ScratchpadReadIO(sp_bank_entries, sp_width))
+      val read = Vec(sp_banks, new ScratchpadReadIO(sp_bank_entries, sp_width, log2Ceil(config.inputType.getWidth)))
       val write = Vec(sp_banks, new ScratchpadWriteIO(sp_bank_entries, sp_width, (sp_width / (aligned_to * 8)) max 1, config.inputType.getWidth))
     }
 
@@ -86,10 +86,13 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
   val precision_bits = RegInit((log2Ceil(config.inputType.getWidth)).U(3.W))
 
   // SRAM addresses of matmul operands
-  val a_address_rs1 = rs1s(a_address_place).asTypeOf(local_addr_t)
-  val b_address_rs2 = rs2s(0).asTypeOf(local_addr_t)
-  val d_address_rs1 = rs1s(preload_cmd_place).asTypeOf(local_addr_t)
-  val c_address_rs2 = rs2s(preload_cmd_place).asTypeOf(local_addr_t)
+  val a_address_rs1 = Cat(Cat(rs1s(a_address_place)(31, 30), rs1s(a_address_place)(30 - log2Ceil(config.inputType.getWidth), 0)), 0.U(log2Ceil(config.inputType.getWidth) - 1, 0)).asTypeOf(local_addr_t)
+
+  val b_address_rs2 = Cat(Cat(rs2s(0)(31, 30), rs1s(0)(30 - log2Ceil(config.inputType.getWidth), 0)), 0.U(log2Ceil(config.inputType.getWidth) - 1, 0)).asTypeOf(local_addr_t)
+
+  val d_address_rs1 = Cat(Cat(rs1s(preload_cmd_place)(31, 30), rs1s(preload_cmd_place)(30 - log2Ceil(config.inputType.getWidth), 0)), 0.U(log2Ceil(config.inputType.getWidth) - 1, 0)).asTypeOf(local_addr_t)
+
+  val c_address_rs2 = Cat(Cat(rs2s(preload_cmd_place)(31, 30), rs2s(preload_cmd_place)(30 - log2Ceil(config.inputType.getWidth), 0)), 0.U(log2Ceil(config.inputType.getWidth) - 1, 0)).asTypeOf(local_addr_t)
 
   val multiply_garbage = a_address_rs1.is_garbage()
   val accumulate_zeros = b_address_rs2.is_garbage()
@@ -305,11 +308,13 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
 
     io.srams.read(i).req.valid := read_a || read_b || read_d
     io.srams.read(i).req.bits.fromDMA := false.B
-    io.srams.read(i).req.bits.addr := MuxCase(a_address_rs1.sp_row() + a_fire_counter,
+    // Precision bits should make an impact here
+    io.srams.read(i).req.bits.addr := MuxCase(a_address_rs1.sprow() + a_fire_counter,
       Seq(read_b -> (b_address_rs2.sp_row() + b_fire_counter),
-        read_d -> (d_address_rs1.sp_row() + block_size.U - 1.U - d_fire_counter)))
+        read_d -> (d_address_rs1.sp_row() + block_size.U - 1.U - d_fire_counter))) // FIXME
 
     io.srams.read(i).req.bits.precision_bits := log2Ceil(config.inputType.getWidth).U
+    io.srams.read(i).req.bits.subrow := 0.U
     io.srams.read(i).resp.ready := true.B
   }
 

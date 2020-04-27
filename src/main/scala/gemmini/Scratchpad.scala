@@ -72,17 +72,20 @@ class ScratchpadWriteMemIO(local_addr_t: LocalAddr)
   override def cloneType: this.type = new ScratchpadWriteMemIO(local_addr_t.cloneType).asInstanceOf[this.type]
 }
 
-class ScratchpadReadReq(val n: Int) extends Bundle {
+class ScratchpadReadReq(val n: Int, val input_width: Int) extends Bundle {
   val addr = UInt(log2Ceil(n).W)
   val fromDMA = Bool()
+  // Add starting and ending precision
   val precision_bits = UInt(3.W)
+  val subrow = UInt(input_width.W) // which subrow to write to
 }
 
 // New Class for pipelining memory to later edit
-class PipelinedScratchpadReadResp(val w: Int) extends Bundle {
+class PipelinedScratchpadReadResp(val w: Int, val input_width: Int) extends Bundle {
   val body = new ScratchpadReadResp(w)
   val starting_precision_bits = UInt(3.W)
   val ending_precision_bits = UInt(3.W)
+  val subrow = UInt(input_width.W) // which subrow to write to
 }
 
 class ScratchpadReadResp(val w: Int) extends Bundle {
@@ -90,8 +93,8 @@ class ScratchpadReadResp(val w: Int) extends Bundle {
   val fromDMA = Bool()
 }
 
-class ScratchpadReadIO(val n: Int, val w: Int) extends Bundle {
-  val req = Decoupled(new ScratchpadReadReq(n))
+class ScratchpadReadIO(val n: Int, val w: Int, val input_width: Int) extends Bundle {
+  val req = Decoupled(new ScratchpadReadReq(n, input_width))
   val resp = Flipped(Decoupled(new ScratchpadReadResp(w)))
 }
 
@@ -112,7 +115,7 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
   val mask_elem = UInt((w min (aligned_to * 8)).W) // What datatype does each mask bit correspond to?
 
   val io = IO(new Bundle {
-    val read = Flipped(new ScratchpadReadIO(n, w))
+    val read = Flipped(new ScratchpadReadIO(n, w, log2Ceil(max_precision)))
     val write = Flipped(new ScratchpadWriteIO(n, w, mask_len, input_width))
   })
 
@@ -127,8 +130,10 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
     else {
       val w = mask_len.U.getWidth
       val precision = 1.U << io.write.precision_bits
-      //val elems_per_subrow = precision * (mask_len / input_width).U
-      val subrow = io.write.subrow
+
+      // Calculate number of subrows but in terms of 2^n
+      val num_subrow_bits = log2Ceil(input_width).U - io.write.precision_bits
+      val subrow = io.write.subrow >> io.write.precision_bits
       /*
        * num_subrows  subrow  1 << sr  mask (for mask_len=16)
        * 1            0       0001     1111111111111111
@@ -140,8 +145,6 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
        * 4            3       1000     0000000000001111
        */
       // Nick's changes to split the code
-      // Calculate number of subrows but in terms of 2^n
-      val num_subrow_bits = log2Ceil(input_width).U - io.write.precision_bits
       // Divide mask len by num subrows to get the len of each segment
       val mask_segment_len = mask_len.U >> num_subrow_bits
       // Calculate the smallest value that should be in the mask
@@ -169,45 +172,20 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
     // TODO should this be inside the if?
     precision_bits.write(io.write.addr, io.write.precision_bits)
   }
-
+  
+  val fromDMA = io.read.req.bits.fromDMA
   val raddr = io.read.req.bits.addr
   val ren = io.read.req.fire()
-
-  val fromDMA = io.read.req.bits.fromDMA
-  // Project start
-  //val elems_per_subrow = precision * (mask_len / input_width).U
-  val read_subrow = io.read.subrow
-  /*
-   * num_subrows  subrow  1 << sr  mask (for mask_len=16)
-   * 1            0       0001     1111111111111111
-   * 2            0       0001     1111111100000000
-   * 2            1       0010     0000000011111111
-   * 4            0       0001     1111000000000000
-   * 4            1       0010     0000111100000000
-   * 4            2       0100     0000000011110000
-   * 4            3       1000     0000000000001111
-   */
-  // Nick's changes to split the code
-  // Calculate number of subrows but in terms of 2^n
-  val num_subrow_bits = log2Ceil(input_width).U - io.write.precision_bits
-  // Divide mask len by num subrows to get the len of each segment
-  val mask_segment_len = mask_len.U >> num_subrow_bits
-  // Calculate the smallest value that should be in the mask
-  val mask_bottom = subrow * mask_segment_len
-  // Calculate the smallest value that should not be included
-  val mask_top = (subrow + 1.U) * mask_segment_len
-  val mask_seq = Seq.tabulate(mask_len)(i =>
-      io.write.mask(i) & ((i.U >= mask_bottom) && (i.U < mask_top)) 
-  )
   val rdata = mem.read(raddr, ren).asUInt()
 
   // Make a queue which buffers the result of an SRAM read if it can't immediately be consumed
-  val q = Module(new Queue(new PipelinedScratchpadReadResp(w), 1, true, true))
+  val q = Module(new Queue(new PipelinedScratchpadReadResp(w, log2Ceil(max_precision)), 1, true, true))
   q.io.enq.valid := RegNext(ren)
   q.io.enq.bits.body.fromDMA := RegNext(fromDMA)
   q.io.enq.bits.body.data := rdata
   q.io.enq.bits.starting_precision_bits := precision_bits.read(raddr, ren)
   q.io.enq.bits.ending_precision_bits := RegNext(io.read.req.bits.precision_bits)
+  q.io.enq.bits.subrow := RegNext(io.read.req.bits.subrow)
 
   val q_will_be_empty = (q.io.count +& q.io.enq.fire()) - q.io.deq.fire() === 0.U
   io.read.req.ready := q_will_be_empty
@@ -219,47 +197,51 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
   io.read.resp.bits.fromDMA := rdata_p.bits.body.fromDMA
   rdata_p.ready := io.read.resp.ready
 
+  // Calculate subrow
+  val subrow = rdata_p.bits.subrow >> rdata_p.bits.starting_precision_bits
+
   // TODO Move the compression/decompression after the pipeline stage
   val stored_precision = 1.U(8.W) << rdata_p.bits.starting_precision_bits
   val output_precision = 1.U(8.W) << rdata_p.bits.ending_precision_bits
-  when (stored_precision === output_precision) {
-    io.read.resp.bits.data := rdata_p.bits.body.data
-  }.otherwise{
-    val output_data = VecInit(Seq.fill(w)(0.U(1.W)))
-    var output_ctr = max_precision
-    while (output_ctr > 0) { // Replace this magic number.
-      val max_val = Wire(SInt(output_ctr.W))
-      max_val := ((1.U << (output_ctr - 1).U) - 1.U).asSInt()
-      val min_val = ~max_val
-      var input_ctr = max_precision
-      while (input_ctr > 0) { // Replace this magic number.
-        // Don't generate hardware to transfer the same # of bits
-        if (output_ctr != input_ctr) {
-          when(input_ctr.U === stored_precision && output_ctr.U === output_precision) {
-            val max_bits = if (input_ctr > output_ctr) input_ctr else output_ctr
-            for (i <- 0 until w / max_precision) {
-              val element = (rdata_p.bits.body.data(((i + 1) * input_ctr) - 1, i * input_ctr)).asSInt()
-              val threshold_output = Wire(SInt(max_bits.W)) 
-              when (element > max_val) {
-                threshold_output := max_val
-              }.elsewhen (element < min_val) {
-                threshold_output := min_val
-              }.otherwise{
-                threshold_output := element
-              }
-              // Data bits will give us an expand if input_ctr < output_ctr otherwise a compress
-              for (l <- 0 until output_ctr) {
-                output_data((i * output_ctr) + l) := threshold_output(l)
-              }
-            }
+  val output_data = VecInit(Seq.fill(w)(0.U(1.W)))
+  var output_ctr = max_precision
+  while (output_ctr > 0) { // Replace this magic number.
+    val max_val = Wire(SInt(output_ctr.W))
+    max_val := ((1.U << (output_ctr - 1).U) - 1.U).asSInt()
+    val min_val = ~max_val
+    var input_ctr = max_precision
+    while (input_ctr > 0) { // Replace this magic number.
+      when(input_ctr.U === stored_precision && output_ctr.U === output_precision) {
+        val num_subrow_bits = log2Ceil(input_width/ input_ctr)
+        val segment_len = w >> num_subrow_bits
+        val data_intermediate = WireDefault(0.U(w.W))
+        for (i <- 0 until (1 << num_subrow_bits)) {
+          when (i.U === subrow) {
+            data_intermediate := rdata_p.bits.body.data(((i + 1) * segment_len) - 1, i * segment_len)
+          }
+        } 
+        val max_bits = if (input_ctr > output_ctr) input_ctr else output_ctr
+        for (i <- 0 until w / max_precision) {
+          val element = (data_intermediate(((i + 1) * input_ctr) - 1, i * input_ctr)).asSInt()
+          val threshold_output = Wire(SInt(max_bits.W)) 
+          when (element > max_val) {
+            threshold_output := max_val
+          }.elsewhen (element < min_val) {
+            threshold_output := min_val
+          }.otherwise{
+            threshold_output := element
+          }
+          // Data bits will give us an expand if input_ctr < output_ctr otherwise a compress
+          for (l <- 0 until output_ctr) {
+            output_data((i * output_ctr) + l) := threshold_output(l)
           }
         }
-        input_ctr = input_ctr / 2
       }
-      output_ctr = output_ctr / 2
+      input_ctr = input_ctr / 2
     }
-    io.read.resp.bits.data := output_data.asUInt()
+    output_ctr = output_ctr / 2
   }
+  io.read.resp.bits.data := output_data.asUInt()
   // Project end
 
 }
@@ -306,7 +288,7 @@ class Scratchpad[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
 
       // SRAM ports
       val srams = new Bundle {
-        val read = Flipped(Vec(sp_banks, new ScratchpadReadIO(sp_bank_entries, spad_w)))
+        val read = Flipped(Vec(sp_banks, new ScratchpadReadIO(sp_bank_entries, spad_w, log2Ceil(config.inputType.getWidth))))
         val write = Flipped(Vec(sp_banks, new ScratchpadWriteIO(sp_bank_entries, spad_w, (spad_w / (aligned_to * 8)) max 1, config.inputType.getWidth)))
       }
 
@@ -395,6 +377,7 @@ class Scratchpad[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
       bank_ios.zipWithIndex.foreach { case (bio, i) =>
         val ex_read_req = io.srams.read(i).req
         val exread = ex_read_req.valid
+        val old_exread = RegNext(exread)
 
         // TODO we tie the write dispatch queue's, and write issue queue's, ready and valid signals together here
         val dmawrite = write_dispatch_q.valid && write_issue_q.io.enq.ready &&
@@ -408,11 +391,12 @@ class Scratchpad[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
           bio.read.req.bits.addr := ex_read_req.bits.addr
           bio.read.req.bits.fromDMA := false.B
           bio.read.req.bits.precision_bits := ex_read_req.bits.precision_bits
+          bio.read.req.bits.subrow := ex_read_req.bits.subrow
         }.elsewhen (dmawrite) {
           bio.read.req.bits.addr := write_dispatch_q.bits.laddr.sp_row()
           bio.read.req.bits.fromDMA := true.B
           bio.read.req.bits.precision_bits := write_dispatch_q.bits.precision_bits
-
+          bio.read.req.bits.subrow := write_dispatch_q.bits.laddr.sp_subrow()
           when (bio.read.req.fire()) {
             write_dispatch_q.ready := true.B
             write_issue_q.io.enq.valid := true.B
