@@ -88,7 +88,7 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
   // SRAM addresses of matmul operands
   val a_address_rs1 = Cat(Cat(rs1s(a_address_place)(31, 30), rs1s(a_address_place)(30 - log2Ceil(config.inputType.getWidth), 0)), 0.U(log2Ceil(config.inputType.getWidth) - 1, 0)).asTypeOf(local_addr_t)
 
-  val b_address_rs2 = Cat(Cat(rs2s(0)(31, 30), rs1s(0)(30 - log2Ceil(config.inputType.getWidth), 0)), 0.U(log2Ceil(config.inputType.getWidth) - 1, 0)).asTypeOf(local_addr_t)
+  val b_address_rs2 = Cat(Cat(rs2s(0)(31, 30), rs2s(0)(30 - log2Ceil(config.inputType.getWidth), 0)), 0.U(log2Ceil(config.inputType.getWidth) - 1, 0)).asTypeOf(local_addr_t)
 
   val d_address_rs1 = Cat(Cat(rs1s(preload_cmd_place)(31, 30), rs1s(preload_cmd_place)(30 - log2Ceil(config.inputType.getWidth), 0)), 0.U(log2Ceil(config.inputType.getWidth) - 1, 0)).asTypeOf(local_addr_t)
 
