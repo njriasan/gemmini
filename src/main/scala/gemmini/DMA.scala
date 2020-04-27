@@ -52,8 +52,8 @@ class StreamReader[T <: Data](config: GemminiArrayConfig[T], nXacts: Int, beatBi
 
   lazy val module = new LazyModuleImp(this) {
     val io = IO(new Bundle {
-      val req = Flipped(Decoupled(new StreamReadRequest(spad_rows, acc_rows, log2Ceil(config.inputType.getWidth))))
-      val resp = Decoupled(new StreamReadResponse(spadWidth, accWidth, spad_rows, acc_rows, aligned_to, log2Ceil(config.inputType.getWidth)))
+      val req = Flipped(Decoupled(new StreamReadRequest(spad_rows, acc_rows, config.inputType.getWidth)))
+      val resp = Decoupled(new StreamReadResponse(spadWidth, accWidth, spad_rows, acc_rows, aligned_to, config.inputType.getWidth))
       val tlb = new FrontendTLBIO
       val busy = Output(Bool())
       val flush = Input(Bool())
@@ -121,7 +121,7 @@ class StreamReaderCore[T <: Data](config: GemminiArrayConfig[T], nXacts: Int, be
     val beatBytes = beatBits / 8
 
     val io = IO(new Bundle {
-      val req = Flipped(Decoupled(new StreamReadRequest(spad_rows, acc_rows, log2Ceil(config.inputType.getWidth))))
+      val req = Flipped(Decoupled(new StreamReadRequest(spad_rows, acc_rows, config.inputType.getWidth)))
       val reserve = new XactTrackerAllocIO(nXacts, maxBytes, spadWidth, accWidth, spad_rows, acc_rows, maxBytes, config.inputType.getWidth)
       val beatData = Decoupled(new StreamReadBeat(nXacts, beatBits, maxBytes))
       val tlb = new FrontendTLBIO
@@ -131,7 +131,7 @@ class StreamReaderCore[T <: Data](config: GemminiArrayConfig[T], nXacts: Int, be
     val s_idle :: s_translate_req :: s_translate_resp :: s_req_new_block :: Nil = Enum(4)
     val state = RegInit(s_idle)
 
-    val req = Reg(new StreamReadRequest(spad_rows, acc_rows, log2Ceil(config.inputType.getWidth)))
+    val req = Reg(new StreamReadRequest(spad_rows, acc_rows, config.inputType.getWidth))
 
     val vpn = req.vaddr(coreMaxAddrBits-1, pgIdxBits)
 

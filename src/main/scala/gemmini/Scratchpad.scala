@@ -93,10 +93,11 @@ class PipelinedPrecisionBits(val n: Int, val input_width: Int) extends Bundle {
 }
 
 // New Class for pipelining memory to later edit
-class PipelinedScratchpadReadResp(val w: Int, val input_width: Int) extends Bundle {
+class PipelinedScratchpadReadResp(val n: Int, val w: Int, val input_width: Int) extends Bundle {
   val body = new ScratchpadReadResp(w)
   val starting_precision_bits = UInt(3.W)
   val ending_precision_bits = UInt(3.W)
+  val addr = UInt(log2Ceil(n).W)
   val subrow = UInt(input_width.W) // which subrow to write to
 }
 
@@ -171,7 +172,9 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
         }
         index = index - 1
       }
-      mem.write(io.write.addr, io.write.data.asTypeOf(Vec(mask_len, mask_elem)), mask)
+      val storeData = io.write.data << (mask_bottom * max_precision.U)
+      printf("Address %d, subrow %d,  Write to Scratchpad Data %x\n", io.write.addr, subrow, io.write.data)
+      mem.write(io.write.addr, storeData.asTypeOf(Vec(mask_len, mask_elem)), mask)
     }
     // TODO should this be inside the if?
     precision_bits.write(io.write.addr, io.write.precision_bits)
@@ -216,10 +219,11 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
   val rdata = mem.read(raddr, ren).asUInt()
 
   // Make a queue which buffers the result of an SRAM read if it can't immediately be consumed
-  val q = Module(new Queue(new PipelinedScratchpadReadResp(w, log2Ceil(max_precision)), 1, true, true))
+  val q = Module(new Queue(new PipelinedScratchpadReadResp(n, w, log2Ceil(max_precision)), 1, true, true))
   q.io.enq.valid := RegNext(ren)
   q.io.enq.bits.body.fromDMA := RegNext(fromDMA)
   q.io.enq.bits.body.data := rdata
+  q.io.enq.bits.addr := RegNext(raddr)
   q.io.enq.bits.starting_precision_bits := precision_bits.read(raddr, ren)
   q.io.enq.bits.ending_precision_bits := RegNext(io.read.req.bits.precision_bits)
   q.io.enq.bits.subrow := RegNext(io.read.req.bits.subrow)
@@ -254,7 +258,10 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
         val data_intermediate = WireDefault(0.U(w.W))
         for (i <- 0 until (1 << num_subrow_bits)) {
           when (i.U === read_subrow) {
-            data_intermediate := Cat(0.U(w), rdata_p.bits.body.data(((i + 1) * segment_len) - 1, i * segment_len))
+            data_intermediate := rdata_p.bits.body.data(((i + 1) * segment_len) - 1, i * segment_len)
+            when (rdata_p.valid) {
+              printf("Address %d, subrow %d, Data Value: %b\n", rdata_p.bits.addr, read_subrow, data_intermediate)
+            }
           }
         } 
         val max_bits = if (input_ctr > output_ctr) input_ctr else output_ctr
