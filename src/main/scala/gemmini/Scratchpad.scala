@@ -172,7 +172,7 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
         }
         index = index - 1
       }
-      val storeData = io.write.data << (mask_bottom * max_precision.U)
+      val storeData = io.write.data << (sub_row * (w.U >> num_subrow_bits))
       printf("Address %d, subrow %d,  Write to Scratchpad Data %x\n", io.write.addr, subrow, io.write.data)
       mem.write(io.write.addr, storeData.asTypeOf(Vec(mask_len, mask_elem)), mask)
     }
