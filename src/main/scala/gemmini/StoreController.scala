@@ -34,6 +34,7 @@ class StoreController[T <: Data : Arithmetic](config: GemminiArrayConfig[T], cor
 
   val cmd = Queue(io.cmd, st_queue_length)
   val vaddr = cmd.bits.cmd.rs1
+  //val localaddr = cmd.bits.cmd.rs2.asTypeOf(local_addr_t)
   val localaddr = Cat(Cat(cmd.bits.cmd.rs2(31, 30), cmd.bits.cmd.rs2(30 - log2Ceil(config.inputType.getWidth), 0)), 0.U(log2Ceil(config.inputType.getWidth) - 1, 0)).asTypeOf(local_addr_t)
   val cols = cmd.bits.cmd.rs2(32 + mvout_len_bits - 1, 32) // TODO magic numbers
   val rows = cmd.bits.cmd.rs2(48 + mvout_rows_bits - 1, 48) // TODO magic numbers

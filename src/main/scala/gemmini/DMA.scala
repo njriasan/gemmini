@@ -24,8 +24,7 @@ class StreamReadRequest(val spad_rows: Int, val acc_rows: Int, val input_width: 
   val len = UInt(16.W) // TODO magic number
   val cmd_id = UInt(8.W) // TODO magic number
   val precision_bits = UInt(3.W)
-  val subrow = UInt(input_width.W)
-  // val offset = UInt(log2Up(spad_rows max acc_rows).W)
+  val offset = UInt(log2Up(spad_rows max acc_rows).W)
 }
 
 class StreamReadResponse(val spadWidth: Int, val accWidth: Int, val spad_rows: Int, val acc_rows: Int,
@@ -38,8 +37,7 @@ class StreamReadResponse(val spadWidth: Int, val accWidth: Int, val spad_rows: I
   val bytes_read = UInt(8.W) // TODO magic number
   val cmd_id = UInt(8.W) // TODO magic number
   val precision_bits = UInt(3.W)
-  val subrow = UInt(input_type.W)
-  // val offset = UInt(log2Up(spad_rows max acc_rows).W)
+  val offset = UInt(log2Up(spad_rows max acc_rows).W)
 }
 
 
@@ -88,8 +86,7 @@ class StreamReader[T <: Data](config: GemminiArrayConfig[T], nXacts: Int, beatBi
     io.resp.bits.mask := beatPacker.io.out.bits.mask
     io.resp.bits.is_acc := beatPacker.io.out.bits.is_acc
     // PROJECT TODO  copy paste below for precision
-    io.resp.bits.subrow := RegEnable(xactTracker.io.peek.entry.subrow, beatPacker.io.req.fire())
-    // io.resp.bits.offset := RegEnable(xactTracker.io.peek.entry.offset, beatPacker.io.req.fire())
+    io.resp.bits.offset := RegEnable(xactTracker.io.peek.entry.offset, beatPacker.io.req.fire())
     io.resp.bits.precision_bits := RegEnable(xactTracker.io.peek.entry.precision_bits, beatPacker.io.req.fire())
     io.resp.bits.cmd_id := RegEnable(xactTracker.io.peek.entry.cmd_id, beatPacker.io.req.fire())
     io.resp.bits.bytes_read := RegEnable(xactTracker.io.peek.entry.bytes_to_read, beatPacker.io.req.fire())
@@ -188,7 +185,7 @@ class StreamReaderCore[T <: Data](config: GemminiArrayConfig[T], nXacts: Int, be
       val packet = Wire(new Packet())
       packet.size := s.U
       packet.lg_size := lg_s.U
-      packet.bytes_read := minOf(s.U - paddr_offset, bytesLeft)
+      packet.bytes_read := minOf(s.U - paddr_offset, bytesLeft) 
       packet.shift := paddr_offset
       packet.paddr := paddr_aligned_to_size
 
@@ -219,8 +216,7 @@ class StreamReaderCore[T <: Data](config: GemminiArrayConfig[T], nXacts: Int, be
     io.reserve.entry.is_acc := req.is_acc
     // PROJECT TODO do this for precision
     io.reserve.entry.precision_bits := req.precision_bits
-    io.reserve.entry.subrow := req.subrow
-    // io.reserve.entry.offset := req.offset
+    io.reserve.entry.offset := req.offset
     // io.reserve.entry.lg_len_req := read_lg_size
     io.reserve.entry.lg_len_req := DontCare // TODO just remove this from the IO completely
     io.reserve.entry.bytes_to_read := read_bytes_read

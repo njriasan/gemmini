@@ -15,7 +15,7 @@ class LoadController[T <: Data](config: GemminiArrayConfig[T], coreMaxAddrBits: 
   val io = IO(new Bundle {
     val cmd = Flipped(Decoupled(new GemminiCmd(rob_entries))) // Gets commands from CPU
 
-    val dma = new ScratchpadReadMemIO(local_addr_t) // Make DMA requests based on those commands
+    val dma = new ScratchpadReadMemIO(sp_bank_entries, local_addr_t) // Make DMA requests based on those commands
 
     val completed = Decoupled(UInt(log2Up(rob_entries).W))
 
@@ -36,6 +36,7 @@ class LoadController[T <: Data](config: GemminiArrayConfig[T], coreMaxAddrBits: 
 
   val cmd = Queue(io.cmd, ld_queue_length)
   val vaddr = cmd.bits.cmd.rs1
+  // val localaddr = cmd.bits.cmd.rs2.asTypeOf(local_addr_t)
   val localaddr = Cat(Cat(cmd.bits.cmd.rs2(31, 30), cmd.bits.cmd.rs2(30 - log2Ceil(config.inputType.getWidth), 0)), 0.U(log2Ceil(config.inputType.getWidth) - 1, 0)).asTypeOf(local_addr_t)
   // RS2 is how many bits in rows and columns
   // Pulls out the actual register
@@ -44,12 +45,6 @@ class LoadController[T <: Data](config: GemminiArrayConfig[T], coreMaxAddrBits: 
   val config_stride = cmd.bits.cmd.rs2
   val config_precision_bits = cmd.bits.cmd.rs1(4, 2)
   val mstatus = cmd.bits.cmd.status
-
-  // val precision = 1 << config_precision_bits
-  // val subrows_per_row = config.inputType.getWidth / precision
-  // summing like this will step over subrows for the given precision,
-  // and then over rows
-  val localaddr_plus_row_counter = localaddr + (row_counter << precision_bits)
 
   io.busy := cmd.valid
 
@@ -76,9 +71,8 @@ class LoadController[T <: Data](config: GemminiArrayConfig[T], coreMaxAddrBits: 
     control_state === waiting_for_dma_req_ready ||
     (control_state === sending_rows && row_counter =/= 0.U)
   io.dma.req.bits.vaddr := vaddr + row_counter * stride
-  io.dma.req.bits.laddr := localaddr_plus_row_counter
-  // io.dma.req.bits.laddr := localaddr
-  // io.dma.req.bits.offset := row_counter
+  io.dma.req.bits.laddr := localaddr
+  io.dma.req.bits.offset := row_counter
   // Gives the number of elements we want to read from one row
   // Want this to reduce length to correspond to new bitwidth
   // Will just store a smaller length in the scratchpad

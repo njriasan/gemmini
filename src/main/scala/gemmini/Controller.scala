@@ -22,12 +22,14 @@ class LocalAddr(sp_banks: Int, sp_bank_entries: Int, acc_banks: Int, acc_bank_en
   private val localAddrBits = 32 // TODO magic number
 
   // config.inputType.getWidth is the max possible number of subrows
+  // FixME
   private val spAddrBits = log2Ceil(sp_banks * sp_bank_entries * input_width)
   private val accAddrBits = log2Ceil(acc_banks * acc_bank_entries)
   private val maxAddrBits = spAddrBits max accAddrBits
 
   private val spBankBits = log2Up(sp_banks)
   private val spBankRowBits = log2Up(sp_bank_entries)
+  // Delete me
   // config.inputType.getWidth is the max possible number of subrows
   private val spBankSubrowBits = log2Ceil(input_width)
 
@@ -40,13 +42,17 @@ class LocalAddr(sp_banks: Int, sp_bank_entries: Int, acc_banks: Int, acc_bank_en
   val garbage_bit = if (localAddrBits - maxAddrBits >= 3) UInt(1.W) else UInt(0.W)
   val data = UInt(maxAddrBits.W)
 
+  // FixME
   def sp_bank(dummy: Int = 0) = if (spAddrBits == spBankRowBits) 0.U else data(spAddrBits - 1, spBankRowBits + spBankSubrowBits)
+  // FixME
   def sp_row(dummy: Int = 0) = data(spBankRowBits + spBankSubrowBits - 1, spBankSubrowBits)
+  // Delete me
   def sp_subrow(dummy: Int = 0) = data(spBankSubrowBits - 1, 0)
   def acc_bank(dummy: Int = 0) = if (accAddrBits == accBankRowBits) 0.U else data(accAddrBits - 1, accBankRowBits)
   def acc_row(dummy: Int = 0) = data(accBankRowBits - 1, 0)
 
   def full_sp_addr(dummy: Int = 0) = data(spAddrBits - 1, 0)
+  // FixME
   def sp_row_addr(dummy: Int = 0) = data(spAddrBits - 1, spBankSubrowBits)
   def full_acc_addr(dummy: Int = 0) = data(accAddrBits - 1, 0)
 
@@ -72,6 +78,7 @@ class LocalAddr(sp_banks: Int, sp_bank_entries: Int, acc_banks: Int, acc_bank_en
     is_acc_addr === other.is_acc_addr &&
       Mux(is_acc_addr, full_acc_addr() > other.full_acc_addr(), full_sp_addr() > other.full_sp_addr())
 
+  // Delete Me
   def <<(shift: UInt) = {
     val result = WireInit(this)
     result.data := data << shift

@@ -21,7 +21,7 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
 
     val srams = new Bundle {
       val read = Vec(sp_banks, new ScratchpadReadIO(sp_bank_entries, sp_width))
-      val write = Vec(sp_banks, new ScratchpadWriteIO(sp_bank_entries, sp_width, (sp_width / (aligned_to * 8)) max 1, config.inputType.getWidth))
+      val write = Vec(sp_banks, new ScratchpadWriteIO(sp_bank_entries, sp_width, (sp_width / (aligned_to * 8)) max 1))
     }
 
     val acc = new Bundle {
@@ -86,6 +86,10 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
   val precision_bits = RegInit((log2Ceil(config.inputType.getWidth)).U(3.W))
 
   // SRAM addresses of matmul operands
+  // val a_address_rs1 = rs1s(a_address_place).asTypeOf(local_addr_t)
+  // val b_address_rs2 = rs2s(0).asTypeOf(local_addr_t)
+  // val d_address_rs1 = rs1s(preload_cmd_place).asTypeOf(local_addr_t)
+  // val c_address_rs2 = rs2s(preload_cmd_place).asTypeOf(local_addr_t)
   val a_address_rs1 = rs1s(a_address_place).asTypeOf(local_addr_t) << log2Ceil(config.inputType.getWidth).U
   val b_address_rs2 = rs2s(0).asTypeOf(local_addr_t) << log2Ceil(config.inputType.getWidth).U
   val d_address_rs1 = rs1s(preload_cmd_place).asTypeOf(local_addr_t) << log2Ceil(config.inputType.getWidth).U
@@ -643,6 +647,10 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
 
   val output_counter = new Counter(block_size)
 
+  val base_addr = w_row
+  val offset = Mux(current_dataflow === Dataflow.WS.id.U, output_counter.value,
+    block_size.U - 1.U - output_counter.value)
+
   val current_w_bank_address = Mux(current_dataflow === Dataflow.WS.id.U, w_row + output_counter.value,
     w_row + block_size.U - 1.U - output_counter.value)
 
@@ -667,7 +675,8 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
     })))
 
     io.srams.write(i).en := start_array_outputting && w_bank === i.U && !write_to_acc && !is_garbage_addr && write_this_row
-    io.srams.write(i).addr := current_w_bank_address
+    io.srams.write(i).addr := base_addr
+    io.srams.write(i).offset := offset
     // Compress the data here
     val activated_int = activated_wdata.asUInt()
     val compressed_data = VecInit(Seq.fill(config.inputType.getWidth * block_size)(0.U(1.W)))
@@ -700,7 +709,6 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
     io.srams.write(i).data := compressed_data.asUInt()
     // Change with the precision
     io.srams.write(i).precision_bits := precision_bits
-    io.srams.write(i).subrow := 0.U
     // io.srams.write(i).mask := VecInit(Seq.fill(io.srams.write(0).mask.length)(true.B))
     io.srams.write(i).mask := w_mask.flatMap(b => Seq.fill(inputType.getWidth / (aligned_to * 8))(b))
   }
