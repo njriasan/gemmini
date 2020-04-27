@@ -16,7 +16,7 @@ class StoreController[T <: Data : Arithmetic](config: GemminiArrayConfig[T], cor
   val io = IO(new Bundle {
     val cmd = Flipped(Decoupled(new GemminiCmd(rob_entries)))
 
-    val dma = new ScratchpadWriteMemIO(local_addr_t)
+    val dma = new ScratchpadWriteMemIO(sp_bank_entries, local_addr_t)
 
     val completed = Decoupled(UInt(log2Up(rob_entries).W))
 
@@ -46,7 +46,6 @@ class StoreController[T <: Data : Arithmetic](config: GemminiArrayConfig[T], cor
 
   cmd.ready := false.B
 
-  val localaddr_plus_row_counter = localaddr + (row_counter << precision_bits)
   // Command tracker instantiation
   val nCmds = 2 // TODO make this a config parameter
 
@@ -61,9 +60,8 @@ class StoreController[T <: Data : Arithmetic](config: GemminiArrayConfig[T], cor
     control_state === waiting_for_dma_req_ready ||
     (control_state === sending_rows && row_counter =/= 0.U)
   io.dma.req.bits.vaddr := vaddr + row_counter * stride
-  // io.dma.req.bits.laddr := localaddr
-  // io.dma.req.bits.offset := row_counter
-  io.dma.req.bits.laddr := localaddr_plus_row_counter
+  io.dma.req.bits.laddr := localaddr
+  io.dma.req.bits.offset := row_counter
   io.dma.req.bits.len := cols >> (log2Ceil(config.inputType.getWidth).U - precision_bits) // PROJECT
   io.dma.req.bits.precision_bits := precision_bits
   io.dma.req.bits.status := mstatus

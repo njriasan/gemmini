@@ -77,6 +77,8 @@ class LoadController[T <: Data](config: GemminiArrayConfig[T], coreMaxAddrBits: 
     (control_state === sending_rows && row_counter =/= 0.U)
   io.dma.req.bits.vaddr := vaddr + row_counter * stride
   io.dma.req.bits.laddr := localaddr_plus_row_counter
+  // io.dma.req.bits.laddr := localaddr
+  // io.dma.req.bits.offset := row_counter
   // Gives the number of elements we want to read from one row
   // Want this to reduce length to correspond to new bitwidth
   // Will just store a smaller length in the scratchpad

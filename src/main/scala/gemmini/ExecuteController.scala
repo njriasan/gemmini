@@ -20,7 +20,7 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
     val cmd = Flipped(Decoupled(new GemminiCmd(rob_entries)))
 
     val srams = new Bundle {
-      val read = Vec(sp_banks, new ScratchpadReadIO(sp_bank_entries, sp_width, log2Ceil(config.inputType.getWidth)))
+      val read = Vec(sp_banks, new ScratchpadReadIO(sp_bank_entries, sp_width))
       val write = Vec(sp_banks, new ScratchpadWriteIO(sp_bank_entries, sp_width, (sp_width / (aligned_to * 8)) max 1, config.inputType.getWidth))
     }
 
@@ -308,10 +308,13 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
     // Precision bits should make an impact here
     io.srams.read(i).req.bits.addr := MuxCase(a_address_rs1.sp_row() + a_fire_counter,
       Seq(read_b -> (b_address_rs2.sp_row() + b_fire_counter),
-        read_d -> (d_address_rs1.sp_row() + block_size.U - 1.U - d_fire_counter))) // FIXME
+        read_d -> (d_address_rs1.sp_row() ))) // FIXME
+
+    io.srams.read(i).req.bits.offset := MuxCase( a_fire_counter,
+      Seq(read_b -> (b_fire_counter),
+        read_d -> (block_size.U - 1.U - d_fire_counter))) // FIXME
 
     io.srams.read(i).req.bits.precision_bits := log2Ceil(config.inputType.getWidth).U
-    io.srams.read(i).req.bits.subrow := 0.U
     io.srams.read(i).resp.ready := true.B
   }
 

@@ -25,7 +25,7 @@ class StreamReadRequest(val spad_rows: Int, val acc_rows: Int, val input_width: 
   val cmd_id = UInt(8.W) // TODO magic number
   val precision_bits = UInt(3.W)
   val subrow = UInt(input_width.W)
-  // val offset = UInt(n.W)
+  // val offset = UInt(log2Up(spad_rows max acc_rows).W)
 }
 
 class StreamReadResponse(val spadWidth: Int, val accWidth: Int, val spad_rows: Int, val acc_rows: Int,
@@ -39,7 +39,7 @@ class StreamReadResponse(val spadWidth: Int, val accWidth: Int, val spad_rows: I
   val cmd_id = UInt(8.W) // TODO magic number
   val precision_bits = UInt(3.W)
   val subrow = UInt(input_type.W)
-  // val offset = UInt(n.W)
+  // val offset = UInt(log2Up(spad_rows max acc_rows).W)
 }
 
 
