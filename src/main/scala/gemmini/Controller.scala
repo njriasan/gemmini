@@ -72,6 +72,12 @@ class LocalAddr(sp_banks: Int, sp_bank_entries: Int, acc_banks: Int, acc_bank_en
     is_acc_addr === other.is_acc_addr &&
       Mux(is_acc_addr, full_acc_addr() > other.full_acc_addr(), full_sp_addr() > other.full_sp_addr())
 
+  def <<(shift: UInt) = {
+    val result = WireInit(this)
+    result.data := data << shift
+    result
+  }
+
   def make_this_garbage(dummy: Int = 0): Unit = {
     is_acc_addr := true.B
     accumulate := true.B
