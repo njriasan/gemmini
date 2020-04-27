@@ -13,6 +13,7 @@ class XactTrackerEntry(val maxShift: Int, val spadWidth: Int, val accWidth :Int,
   val is_acc = Bool()
   // PROJECT TODO precision bits
   val precision_bits = UInt(3.W)
+  // val offset = UInt(log2Up(spadRows max accRows).W)
   val subrow = UInt(input_width.W)
   val spad_row_offset = UInt(log2Up(spadWidth max accWidth).W)
   val lg_len_req = UInt(log2Up(log2Up(maxReqBytes+1)+1).W)
