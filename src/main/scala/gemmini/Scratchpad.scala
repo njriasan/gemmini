@@ -24,6 +24,8 @@ class ScratchpadMemReadRequest(local_addr_t: LocalAddr)
 
   val status = new MStatus
 
+  // val offset = UInt(n.W)
+
   override def cloneType: this.type = new ScratchpadMemReadRequest(local_addr_t).asInstanceOf[this.type]
 }
 
@@ -87,6 +89,7 @@ class PipelinedPrecisionBits(val n: Int, val input_width: Int) extends Bundle {
   val starting_precision_bits = UInt(3.W)
   val ending_precision_bits = UInt(3.W)
   val subrow = UInt(input_width.W) // which subrow to write to
+  // val offset = UInt(n.W) // offset from the base addr
 }
 
 // New Class for pipelining memory to later edit
@@ -137,9 +140,6 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
       mem.write(io.write.addr, io.write.data.asTypeOf(Vec(mask_len, mask_elem)))
     }
     else {
-      val w = mask_len.U.getWidth
-      val precision = 1.U << io.write.precision_bits
-
       // Calculate number of subrows but in terms of 2^n
       val num_subrow_bits = log2Ceil(input_width).U - io.write.precision_bits
       val subrow = io.write.subrow >> io.write.precision_bits
@@ -185,13 +185,17 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
   early_q.io.enq.bits.starting_precision_bits := precision_bits.read(raddr, ren)
   early_q.io.enq.bits.ending_precision_bits := RegNext(io.read.req.bits.precision_bits)
   early_q.io.enq.bits.subrow := RegNext(io.read.req.bits.subrow)
+  // early_q.io.enq.bits.subrow := RegNext(io.read.req.bits.offset)
   val early_q_will_be_empty = (early_q.io.count +& early_q.io.enq.fire()) - early_q.io.deq.fire() === 0.U
   io.read.req.ready := early_q_will_be_empty
 
   // Build the rest of the resp pipeline
   val precision_p = Pipeline(early_q.io.deq, mem_pipeline)
 
-  val rdata = mem.read(precision_p.bits.addr, precision_p.ready).asUInt()
+  // val newAddr = precision_p.bits.addr + (precision_p.bits.offset >> (log2Ceil(max_precision) -  precision_p.bits.starting_precision_bits))
+
+  // val rdata = mem.read(newAddr, precision_p.fire()).asUInt()
+  val rdata = mem.read(precision_p.bits.addr, precision_p.fire()).asUInt()
   // Make a queue which buffers the result of an SRAM read if it can't immediately be consumed
   val q = Module(new Queue(new PipelinedScratchpadReadResp(w, log2Ceil(max_precision)), 1, true, true))
   q.io.enq.valid := precision_p.valid
@@ -231,7 +235,7 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
   rdata_p.ready := io.read.resp.ready
 
   // Calculate subrow
-  val subrow = rdata_p.bits.subrow >> rdata_p.bits.starting_precision_bits
+  val read_subrow = rdata_p.bits.subrow >> rdata_p.bits.starting_precision_bits
 
   // TODO Move the compression/decompression after the pipeline stage
   val stored_precision = 1.U(8.W) << rdata_p.bits.starting_precision_bits
@@ -249,7 +253,7 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
         val segment_len = w >> num_subrow_bits
         val data_intermediate = WireDefault(0.U(w.W))
         for (i <- 0 until (1 << num_subrow_bits)) {
-          when (i.U === subrow) {
+          when (i.U === read_subrow) {
             data_intermediate := Cat(0.U(w), rdata_p.bits.body.data(((i + 1) * segment_len) - 1, i * segment_len))
           }
         } 
@@ -410,7 +414,6 @@ class Scratchpad[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
       bank_ios.zipWithIndex.foreach { case (bio, i) =>
         val ex_read_req = io.srams.read(i).req
         val exread = ex_read_req.valid
-        val old_exread = RegNext(exread)
 
         // TODO we tie the write dispatch queue's, and write issue queue's, ready and valid signals together here
         val dmawrite = write_dispatch_q.valid && write_issue_q.io.enq.ready &&
@@ -430,6 +433,7 @@ class Scratchpad[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
           bio.read.req.bits.fromDMA := true.B
           bio.read.req.bits.precision_bits := write_dispatch_q.bits.precision_bits
           bio.read.req.bits.subrow := write_dispatch_q.bits.laddr.sp_subrow()
+          // bio.read.req.bits.offset := write_dispatch_q.offset
           when (bio.read.req.fire()) {
             write_dispatch_q.ready := true.B
             write_issue_q.io.enq.valid := true.B

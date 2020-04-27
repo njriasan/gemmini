@@ -61,6 +61,8 @@ class StoreController[T <: Data : Arithmetic](config: GemminiArrayConfig[T], cor
     control_state === waiting_for_dma_req_ready ||
     (control_state === sending_rows && row_counter =/= 0.U)
   io.dma.req.bits.vaddr := vaddr + row_counter * stride
+  // io.dma.req.bits.laddr := localaddr
+  // io.dma.req.bits.offset := row_counter
   io.dma.req.bits.laddr := localaddr_plus_row_counter
   io.dma.req.bits.len := cols >> (log2Ceil(config.inputType.getWidth).U - precision_bits) // PROJECT
   io.dma.req.bits.precision_bits := precision_bits
