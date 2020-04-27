@@ -86,14 +86,10 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
   val precision_bits = RegInit((log2Ceil(config.inputType.getWidth)).U(3.W))
 
   // SRAM addresses of matmul operands
-  // val a_address_rs1 = rs1s(a_address_place).asTypeOf(local_addr_t)
-  // val b_address_rs2 = rs2s(0).asTypeOf(local_addr_t)
-  // val d_address_rs1 = rs1s(preload_cmd_place).asTypeOf(local_addr_t)
-  // val c_address_rs2 = rs2s(preload_cmd_place).asTypeOf(local_addr_t)
-  val a_address_rs1 = rs1s(a_address_place).asTypeOf(local_addr_t) << log2Ceil(config.inputType.getWidth).U
-  val b_address_rs2 = rs2s(0).asTypeOf(local_addr_t) << log2Ceil(config.inputType.getWidth).U
-  val d_address_rs1 = rs1s(preload_cmd_place).asTypeOf(local_addr_t) << log2Ceil(config.inputType.getWidth).U
-  val c_address_rs2 = rs2s(preload_cmd_place).asTypeOf(local_addr_t) << log2Ceil(config.inputType.getWidth).U
+  val a_address_rs1 = rs1s(a_address_place).asTypeOf(local_addr_t)
+  val b_address_rs2 = rs2s(0).asTypeOf(local_addr_t)
+  val d_address_rs1 = rs1s(preload_cmd_place).asTypeOf(local_addr_t)
+  val c_address_rs2 = rs2s(preload_cmd_place).asTypeOf(local_addr_t)
 
   val multiply_garbage = a_address_rs1.is_garbage()
   val accumulate_zeros = b_address_rs2.is_garbage()

@@ -36,8 +36,7 @@ class LoadController[T <: Data](config: GemminiArrayConfig[T], coreMaxAddrBits: 
 
   val cmd = Queue(io.cmd, ld_queue_length)
   val vaddr = cmd.bits.cmd.rs1
-  // val localaddr = cmd.bits.cmd.rs2.asTypeOf(local_addr_t)
-  val localaddr = Cat(Cat(cmd.bits.cmd.rs2(31, 30), cmd.bits.cmd.rs2(30 - log2Ceil(config.inputType.getWidth), 0)), 0.U(log2Ceil(config.inputType.getWidth) - 1, 0)).asTypeOf(local_addr_t)
+  val localaddr = cmd.bits.cmd.rs2.asTypeOf(local_addr_t)
   // RS2 is how many bits in rows and columns
   // Pulls out the actual register
   val cols = cmd.bits.cmd.rs2(32 + mvin_len_bits - 1, 32) // TODO magic numbers
