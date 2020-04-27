@@ -306,13 +306,13 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
     io.srams.read(i).req.valid := read_a || read_b || read_d
     io.srams.read(i).req.bits.fromDMA := false.B
     // Precision bits should make an impact here
-    io.srams.read(i).req.bits.addr := MuxCase(a_address_rs1.sp_row() + a_fire_counter,
-      Seq(read_b -> (b_address_rs2.sp_row() + b_fire_counter),
-        read_d -> (d_address_rs1.sp_row() ))) // FIXME
+    io.srams.read(i).req.bits.addr := MuxCase(a_address_rs1.sp_row(),
+      Seq(read_b -> (b_address_rs2.sp_row()),
+        read_d -> (d_address_rs1.sp_row() )))
 
     io.srams.read(i).req.bits.offset := MuxCase( a_fire_counter,
       Seq(read_b -> (b_fire_counter),
-        read_d -> (block_size.U - 1.U - d_fire_counter))) // FIXME
+        read_d -> (block_size.U - 1.U - d_fire_counter)))
 
     io.srams.read(i).req.bits.precision_bits := log2Ceil(config.inputType.getWidth).U
     io.srams.read(i).resp.ready := true.B
@@ -705,8 +705,15 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
     io.srams.write(i).data := compressed_data.asUInt()
     // Change with the precision
     io.srams.write(i).precision_bits := precision_bits
-    // io.srams.write(i).mask := VecInit(Seq.fill(io.srams.write(0).mask.length)(true.B))
-    io.srams.write(i).mask := w_mask.flatMap(b => Seq.fill(inputType.getWidth / (aligned_to * 8))(b))
+    io.srams.write(i).mask := VecInit(Seq.fill(block_size)(false.B))
+    for (j <- 0 until inputType.getWidth) {
+      for (k <- 0 until (block_size / inputType.getWidth)) {
+        when (j.U < precision) {
+          io.srams.write(i).mask(j * (block_size / inputType.getWidth) + k) := true.B
+        } 
+      }
+    }
+    //io.srams.write(i).mask := w_mask.flatMap(b => Seq.fill(inputType.getWidth / (aligned_to * 8))(b))
   }
 
   // Write to accumulator
