@@ -112,7 +112,7 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
   val pending_completed_rob_ids = Reg(Vec(2, UDValid(UInt(log2Up(rob_entries).W))))
 
   // Instantiate a queue which queues up signals which must be fed into the mesh
-  val mesh_cntl_signals_q = Module(new Queue(new ComputeCntlSignals, mem_pipeline+1,
+  val mesh_cntl_signals_q = Module(new Queue(new ComputeCntlSignals, (2 * mem_pipeline) + 2,
     pipe=true))
 
   val cntl_ready = mesh_cntl_signals_q.io.enq.ready
@@ -610,6 +610,15 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
     mesh.io.d.valid := cntl.d_fire && dataD_valid
     mesh.io.tag_in.valid := true.B
 
+    when(cntl.a_fire && dataA_valid && !cntl.a_garbage) {
+      printf(p"address unknown: A row is $dataA\n")
+    }
+    when(cntl.b_fire && dataB_valid && !cntl.b_garbage) {
+      printf(p"address unknown: B row is $dataB\n")
+    }
+    when(cntl.d_fire && dataD_valid && !cntl.d_garbage) {
+      printf(p"address unknown: D row is $dataD\n")
+    }
     mesh.io.a.bits := dataA.asTypeOf(Vec(meshRows, Vec(tileRows, inputType)))
     mesh.io.b.bits := dataB.asTypeOf(Vec(meshColumns, Vec(tileColumns, inputType)))
     mesh.io.d.bits := dataD.asTypeOf(Vec(meshColumns, Vec(tileColumns, inputType)))
@@ -670,6 +679,9 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
       e_act
     })))
 
+    when (start_array_outputting && w_bank === i.U && !write_to_acc && !is_garbage_addr && write_this_row) {
+      printf(p"address unknown: C row is $activated_wdata\n") 
+    }
     io.srams.write(i).en := start_array_outputting && w_bank === i.U && !write_to_acc && !is_garbage_addr && write_this_row
     io.srams.write(i).addr := base_addr
     io.srams.write(i).offset := offset
@@ -703,17 +715,11 @@ class ExecuteController[T <: Data](xLen: Int, tagWidth: Int, config: GemminiArra
 
 
     io.srams.write(i).data := compressed_data.asUInt()
+    //io.srams.write(i).data := activated_wdata.asUInt()
+
     // Change with the precision
     io.srams.write(i).precision_bits := precision_bits
-    io.srams.write(i).mask := VecInit(Seq.fill(block_size)(false.B))
-    for (j <- 0 until inputType.getWidth) {
-      for (k <- 0 until (block_size / inputType.getWidth)) {
-        when (j.U < precision) {
-          io.srams.write(i).mask(j * (block_size / inputType.getWidth) + k) := true.B
-        } 
-      }
-    }
-    //io.srams.write(i).mask := w_mask.flatMap(b => Seq.fill(inputType.getWidth / (aligned_to * 8))(b))
+    io.srams.write(i).mask := w_mask.flatMap(b => Seq.fill(inputType.getWidth / (aligned_to * 8))(b))
   }
 
   // Write to accumulator

@@ -93,11 +93,12 @@ class PipelinedPrecisionBits(val n: Int) extends Bundle {
 }
 
 // New Class for pipelining memory to later edit
-class PipelinedScratchpadReadResp(val w: Int, val input_width: Int) extends Bundle {
+class PipelinedScratchpadReadResp(val n: Int, val w: Int, val input_width: Int) extends Bundle {
   val body = new ScratchpadReadResp(w)
   val starting_precision_bits = UInt(3.W)
   val ending_precision_bits = UInt(3.W)
   val subrow = UInt(input_width.W) // which subrow to write to
+  val addr = UInt(log2Ceil(n).W) // For debugging
 }
 
 class ScratchpadReadResp(val w: Int) extends Bundle {
@@ -178,6 +179,9 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
         index = index - 1
       }
       val storeAddr = io.write.addr + (io.write.offset >> (log2Ceil(max_precision).U - io.write.precision_bits))
+      printf("Scratchpad store to base address %d with offset %d\n", io.write.addr, io.write.offset)
+      printf("Scratchpad store to final address %d with subrow %d\n", storeAddr, subrow)
+      printf("Scratchpad store data %x to final address %d with subrow %d\n", storeData, storeAddr, subrow)
       mem.write(storeAddr, storeData.asTypeOf(Vec(mask_len, mask_elem)), mask)
     }
     // TODO should this be inside the if?
@@ -201,18 +205,20 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
   // Build the rest of the resp pipeline
   val precision_p = Pipeline(early_q.io.deq, mem_pipeline)
 
+  val tempSubrow = precision_p.bits.offset & ((1.U << (log2Ceil(max_precision).U - precision_p.bits.starting_precision_bits)) - 1.U)
   val newAddr = precision_p.bits.addr + (precision_p.bits.offset >> ((log2Ceil(max_precision).U) - precision_p.bits.starting_precision_bits))
 
   val rdata = mem.read(newAddr, precision_p.fire()).asUInt()
   // Make a queue which buffers the result of an SRAM read if it can't immediately be consumed
-  val q = Module(new Queue(new PipelinedScratchpadReadResp(w, log2Ceil(max_precision)), 1, true, true))
-  q.io.enq.valid := RegNext(precision_p.valid)
+  val q = Module(new Queue(new PipelinedScratchpadReadResp(n, w, log2Ceil(max_precision)), 1, true, true))
+  q.io.enq.valid := RegNext(precision_p.fire())
   q.io.enq.bits.body.fromDMA := RegNext(precision_p.bits.fromDMA)
   q.io.enq.bits.body.data := rdata
   q.io.enq.bits.starting_precision_bits := RegNext(precision_p.bits.starting_precision_bits)
 
   q.io.enq.bits.ending_precision_bits := RegNext(precision_p.bits.ending_precision_bits)
-  q.io.enq.bits.subrow := RegNext(precision_p.bits.offset & ((1.U << (log2Ceil(max_precision).U - precision_p.bits.starting_precision_bits)) - 1.U))
+  q.io.enq.bits.subrow := RegNext(tempSubrow)
+  q.io.enq.bits.addr := RegNext(newAddr)
 
   val q_will_be_empty = (q.io.count +& q.io.enq.fire()) - q.io.deq.fire() === 0.U
   precision_p.ready := q_will_be_empty
@@ -245,11 +251,6 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
         for (i <- 0 until (1 << num_subrow_bits)) {
           when (i.U === read_subrow) {
             data_intermediate := rdata_p.bits.body.data(((i + 1) * segment_len) - 1, i * segment_len)
-            /*
-            when (rdata_p.valid) {
-              printf("Address %d, subrow %d, Data Value: %b\n", rdata_p.bits.addr, read_subrow, data_intermediate)
-            }
-            */
           }
         } 
         val max_bits = if (input_ctr > output_ctr) input_ctr else output_ctr
@@ -272,6 +273,10 @@ class ScratchpadBank(n: Int, w: Int, mem_pipeline: Int, aligned_to: Int, max_pre
       input_ctr = input_ctr / 2
     }
     output_ctr = output_ctr / 2
+  }
+  when (rdata_p.fire()) {
+      printf("Scratchpad load data %x to final address %d with subrow %d\n", output_data.asUInt(), rdata_p.bits.addr, read_subrow)
+      printf("Starting precision bits %d, ending precision bits%d\n", rdata_p.bits.starting_precision_bits, rdata_p.bits.ending_precision_bits)
   }
   io.read.resp.bits.data := output_data.asUInt()
   // Project end
@@ -370,7 +375,7 @@ class Scratchpad[T <: Data: Arithmetic](config: GemminiArrayConfig[T])
     read_issue_q.io.deq.ready := reader.module.io.req.ready
     reader.module.io.req.bits.vaddr := read_issue_q.io.deq.bits.vaddr
     reader.module.io.req.bits.spaddr := Mux(read_issue_q.io.deq.bits.laddr.is_acc_addr,
-      read_issue_q.io.deq.bits.laddr.full_acc_addr(), read_issue_q.io.deq.bits.laddr.sp_row_addr())
+      read_issue_q.io.deq.bits.laddr.full_acc_addr(), read_issue_q.io.deq.bits.laddr.full_sp_addr())
     reader.module.io.req.bits.len := read_issue_q.io.deq.bits.len
     reader.module.io.req.bits.is_acc := read_issue_q.io.deq.bits.laddr.is_acc_addr
     reader.module.io.req.bits.status := read_issue_q.io.deq.bits.status

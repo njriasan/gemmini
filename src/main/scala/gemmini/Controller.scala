@@ -43,7 +43,6 @@ class LocalAddr(sp_banks: Int, sp_bank_entries: Int, acc_banks: Int, acc_bank_en
   def acc_row(dummy: Int = 0) = data(accBankRowBits - 1, 0)
 
   def full_sp_addr(dummy: Int = 0) = data(spAddrBits - 1, 0)
-  def sp_row_addr(dummy: Int = 0) = data(spAddrBits - 1, 0)
   def full_acc_addr(dummy: Int = 0) = data(accAddrBits - 1, 0)
 
   def is_same_address(other: LocalAddr): Bool = is_acc_addr === other.is_acc_addr && data === other.data
